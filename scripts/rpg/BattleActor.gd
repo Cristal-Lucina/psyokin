@@ -20,6 +20,7 @@ var current_hp: int = 1
 
 # simple label (created at runtime)
 var _name_hp_label: Label
+var sigil_use_counts: Dictionary = {}
 
 # ------------------------------------------------------------------------------
 # Setup
@@ -52,7 +53,13 @@ func perform_basic_attack(target: BattleActor) -> int:
 	var dodge: int = RPGRules.atk_dodge(target.data)
 	if acc < dodge:
 		return 0
-	return max(0, base)
+        return max(0, base)
+
+func record_sigil_use(s: Sigil) -> void:
+        if s == null:
+                return
+        var c: int = int(sigil_use_counts.get(s, 0))
+        sigil_use_counts[s] = c + 1
 
 # ------------------------------------------------------------------------------
 # Damage & death
