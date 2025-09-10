@@ -36,6 +36,7 @@ const LEVEL_XP: Array[int] = [0, 0, 30, 100, 300]
 @export var unlock_skill_ids: Array[StringName] = []
 
 func xp_to_next() -> int:
+
 	if level >= LEVEL_XP.size() - 1:
 		return 0
 	return LEVEL_XP[level + 1]
@@ -53,3 +54,4 @@ func compatible_with(mind_type: String) -> bool:
 	if mind_type.to_lower() == "omega":
 		return true
 	return sigil_type.to_lower() == mind_type.to_lower()
+

@@ -64,6 +64,7 @@ func added_affinities() -> Array[int]:
 
 # Optional helpers for code-driven socketing
 func add_sigil(s: Sigil, mind_type: String = "OMEGA") -> bool:
+
 	if sigils.size() >= slot_count:
 		return false
 	if s == null:
@@ -72,6 +73,7 @@ func add_sigil(s: Sigil, mind_type: String = "OMEGA") -> bool:
 		return false
 	sigils.append(s)
 	return true
+
 
 func remove_sigil(s: Sigil) -> bool:
 	var idx := sigils.find(s)

@@ -372,6 +372,7 @@ func _finish_and_show_results() -> void:
 			"levels_gained": levels_gained
 		})
 
+
 	if _results_bus != null:
 		_results_bus.set_results(allies_summary, _captured.duplicate(), [], return_scene_path)
 		var err: int = get_tree().change_scene_to_file("res://scenes/Results.tscn")

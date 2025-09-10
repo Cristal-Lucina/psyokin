@@ -65,7 +65,8 @@ Psyokin is a top-down 2D RPG prototype focused on turn-based battles and party p
 - Heavily commented headers summarizing each script’s role
 
 ### How to run
-1. Install Godot 4.4.1 and add `C:\GameDev\Editor\Godot4.4.1` to your system `PATH` so the `godot` command is available.
+
+1. Install Godot 4.4.1 and add `C:\GameDev\Projects\psyokin\Editor\Godot4.4.1` to your system `PATH` so the `godot` command is available.
 2. Open `project.godot` in the editor.
 3. Press **F5** to play.
 

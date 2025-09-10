@@ -75,6 +75,7 @@ func total_armor_limit() -> int:
 
 # Effective stats (hook for equipment bonuses if/when you add them)
 func _bracelet_bonus(stat: String) -> int:
+
 	if bracelet != null and bracelet.has_method("total_bonuses"):
 		var t: Dictionary = bracelet.total_bonuses()
 		return int(t.get(stat, 0))
@@ -94,6 +95,7 @@ func eff_int() -> int:
 
 func eff_cha() -> int:
 	return cha + _bracelet_bonus("cha")
+
 
 # Max resource helpers (wrappers so old call sites like data.hp(rules) still work)
 func hp(_rules: RPGRules = null) -> int:
