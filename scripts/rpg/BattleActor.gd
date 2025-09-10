@@ -33,7 +33,7 @@ func setup(cd: CharacterData, row_id: int, enemy: bool, r: RPGRules) -> void:
 
 	# HP from BalanceTuning (different sliders for allies/enemies)
 	var side: int = (RPGRules.Side.ENEMY if is_enemy else RPGRules.Side.ALLY)
-	max_hp    = RPGRules.hp_from_stats(data.sta, data.level, side)
+	max_hp	  = RPGRules.hp_from_stats(data.sta, data.level, side)
 	current_hp = max_hp
 
 	_build_labels()
@@ -60,6 +60,18 @@ func record_sigil_use(s: Sigil) -> void:
                 return
         var c: int = int(sigil_use_counts.get(s, 0))
         sigil_use_counts[s] = c + 1
+
+func record_sigil_use(s: Sigil) -> void:
+	if s == null:
+		return
+	var c: int = int(sigil_use_counts.get(s, 0))
+	sigil_use_counts[s] = c + 1
+
+func perform_skill(skill_id: String, target: BattleActor) -> void:
+	var skill: Skill = SkillLibrary.create(skill_id)
+	if skill == null:
+		return
+	skill.perform(self, target)
 
 # ------------------------------------------------------------------------------
 # Damage & death

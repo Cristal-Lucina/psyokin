@@ -245,6 +245,14 @@ func _ally_take_turn(actor: BattleActor) -> void:
 				_apply_reaction_row_damage_and_popup(actor, target_a, base_dmg)
 		return
 
+
+	if t == "skill":
+		var skill_id: String = String(result.get("skill_id", ""))
+		var target_s: BattleActor = result.get("target") as BattleActor
+		if skill_id != "" and target_s != null and target_s.is_alive():
+			actor.perform_skill(skill_id, target_s)
+		return
+
 	if t == "capture":
 		var target_c: BattleActor = result.get("target") as BattleActor
 		if target_c != null and target_c.is_alive():
@@ -339,30 +347,31 @@ func _finish_and_show_results() -> void:
 		var xp_before: int = a.data.xp
 		var xptn_before: int = a.data.xp_to_next
 
-                var levels_gained: int = a.data.add_xp(xp_total)
+		var levels_gained: int = a.data.add_xp(xp_total)
 
-                if a.data.bracelet != null:
-                        for s in a.data.bracelet.equipped_sigils():
-                                var gain := 1
-                                if a.sigil_use_counts.has(s):
-                                        gain += int(a.sigil_use_counts[s])
-                                s.gain_xp(gain)
+		if a.data.bracelet != null:
+			for s in a.data.bracelet.equipped_sigils():
+				var gain := 1
+				if a.sigil_use_counts.has(s):
+					gain += int(a.sigil_use_counts[s])
+				s.gain_xp(gain)
 
-                var lvl_after: int = a.data.level
-                var xp_after: int = a.data.xp
-                var xptn_after: int = a.data.xp_to_next
+		var lvl_after: int = a.data.level
+		var xp_after: int = a.data.xp
+		var xptn_after: int = a.data.xp_to_next
 
-                allies_summary.append({
-                        "name": a.data.name,
-                        "level_before": lvl_before,
-                        "level_after": lvl_after,
-                        "xp_gained": xp_total,
-                        "xp_before": xp_before,
-                        "xp_to_next_before": xptn_before,
-                        "xp_after": xp_after,
-                        "xp_to_next_after": xptn_after,
-                        "levels_gained": levels_gained
-                })
+		allies_summary.append({
+			"name": a.data.name,
+			"level_before": lvl_before,
+			"level_after": lvl_after,
+			"xp_gained": xp_total,
+			"xp_before": xp_before,
+			"xp_to_next_before": xptn_before,
+			"xp_after": xp_after,
+			"xp_to_next_after": xptn_after,
+			"levels_gained": levels_gained
+		})
+
 
 	if _results_bus != null:
 		_results_bus.set_results(allies_summary, _captured.duplicate(), [], return_scene_path)
@@ -534,4 +543,5 @@ func _make_sample_ally(index: int) -> CharacterData:
 	c.armor = _make_sample_armor("Gi", 1, 0)
 	c.boots = _make_sample_boots("Light Boots", 1, 0)
 	c.bracelet = _make_sample_bracelet(1)
+	c.skills = ["weapon_focus"]
 	return c

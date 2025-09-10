@@ -2,8 +2,10 @@
 
 2D RPG prototype. Godot 4.4.1-stable_win64.
 Project root: `C:\GameDev\Projects\psyokin`.
+Godot path: `C:\GameDev\Editor\Godot4.4.1`.
 
 How to run:
+- Ensure the Godot executable directory is on your `PATH`.
 - Open `psyokin` in Godot 4.4.1
 - Play: F5
 
@@ -16,10 +18,10 @@ Main scenes:
 
 - `scenes/` – main Godot scenes such as the overworld, battle, and results screens.
 - `scripts/` – game logic and supporting code:
-  - `rpg/` contains the battle system, character data, progression, and related gameplay logic.
-  - `ui/` implements menus like character creation and the pause menu.
-  - `config/` holds tuning parameters and other configuration.
-  - `integrations/` includes interfaces to external services.
+	- `rpg/` contains the battle system, character data, progression, and related gameplay logic.
+	- `ui/` implements menus like character creation and the pause menu.
+	- `config/` holds tuning parameters and other configuration.
+	- `integrations/` includes interfaces to external services.
 - `plugins/` – editor plugins, currently including the Godot Git plugin.
 - `project.godot` – the Godot project configuration file.
 ## Psyokin – Dev Brief (for AI collaborator)
@@ -63,7 +65,8 @@ Psyokin is a top-down 2D RPG prototype focused on turn-based battles and party p
 - Heavily commented headers summarizing each script’s role
 
 ### How to run
-1. Install Godot 4.4.1.
+
+1. Install Godot 4.4.1 and add `C:\GameDev\Projects\psyokin\Editor\Godot4.4.1` to your system `PATH` so the `godot` command is available.
 2. Open `project.godot` in the editor.
 3. Press **F5** to play.
 
