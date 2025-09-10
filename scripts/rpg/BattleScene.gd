@@ -339,23 +339,30 @@ func _finish_and_show_results() -> void:
 		var xp_before: int = a.data.xp
 		var xptn_before: int = a.data.xp_to_next
 
-		var levels_gained: int = a.data.add_xp(xp_total)
+                var levels_gained: int = a.data.add_xp(xp_total)
 
-		var lvl_after: int = a.data.level
-		var xp_after: int = a.data.xp
-		var xptn_after: int = a.data.xp_to_next
+                if a.data.bracelet != null:
+                        for s in a.data.bracelet.equipped_sigils():
+                                var gain := 1
+                                if a.sigil_use_counts.has(s):
+                                        gain += int(a.sigil_use_counts[s])
+                                s.gain_xp(gain)
 
-		allies_summary.append({
-			"name": a.data.name,
-			"level_before": lvl_before,
-			"level_after": lvl_after,
-			"xp_gained": xp_total,
-			"xp_before": xp_before,
-			"xp_to_next_before": xptn_before,
-			"xp_after": xp_after,
-			"xp_to_next_after": xptn_after,
-			"levels_gained": levels_gained
-		})
+                var lvl_after: int = a.data.level
+                var xp_after: int = a.data.xp
+                var xptn_after: int = a.data.xp_to_next
+
+                allies_summary.append({
+                        "name": a.data.name,
+                        "level_before": lvl_before,
+                        "level_after": lvl_after,
+                        "xp_gained": xp_total,
+                        "xp_before": xp_before,
+                        "xp_to_next_before": xptn_before,
+                        "xp_after": xp_after,
+                        "xp_to_next_after": xptn_after,
+                        "levels_gained": levels_gained
+                })
 
 	if _results_bus != null:
 		_results_bus.set_results(allies_summary, _captured.duplicate(), [], return_scene_path)
