@@ -33,7 +33,7 @@ func setup(cd: CharacterData, row_id: int, enemy: bool, r: RPGRules) -> void:
 
 	# HP from BalanceTuning (different sliders for allies/enemies)
 	var side: int = (RPGRules.Side.ENEMY if is_enemy else RPGRules.Side.ALLY)
-	max_hp	  = RPGRules.hp_from_stats(data.sta, data.level, side)
+	max_hp = RPGRules.hp_from_stats(data.sta, data.level, side)
 	current_hp = max_hp
 
 	_build_labels()
@@ -48,18 +48,14 @@ func perform_basic_attack(target: BattleActor) -> int:
 	var base: int = RPGRules.atk_damage(data)
 	if data.weapon != null and data.weapon.dice != "":
 		base += RPGRules.roll_dice(data.weapon.dice, rules)
+
 	# Accuracy check vs target dodge (simple example)
 	var acc: int = RPGRules.atk_accuracy(data)
 	var dodge: int = RPGRules.atk_dodge(target.data)
 	if acc < dodge:
 		return 0
-        return max(0, base)
 
-func record_sigil_use(s: Sigil) -> void:
-        if s == null:
-                return
-        var c: int = int(sigil_use_counts.get(s, 0))
-        sigil_use_counts[s] = c + 1
+	return max(0, base)
 
 func record_sigil_use(s: Sigil) -> void:
 	if s == null:
@@ -108,7 +104,7 @@ func _draw() -> void:
 	# Ally = circle, Enemy = square
 	var r := 10.0
 	if is_enemy:
-		var rect := Rect2(Vector2(-r, -r), Vector2(2.0*r, 2.0*r))
+		var rect := Rect2(Vector2(-r, -r), Vector2(2.0 * r, 2.0 * r))
 		draw_rect(rect, Color(0.85, 0.15, 0.15), true, 2.0)
 		draw_rect(rect, Color(0, 0, 0), false, 2.0)
 	else:

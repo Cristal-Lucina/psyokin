@@ -232,7 +232,7 @@ static func psy_damage(subject_or_cha: Variant, _unused: Variant = null) -> int:
 # ------------------------------------------------------------------------------
 # Element weakness/resistance
 # ------------------------------------------------------------------------------
-const WEAK_MULT: float   = 1.5
+const WEAK_MULT: float  = 1.5
 const RESIST_MULT: float = 0.5
 
 static func weakness_of(t: int) -> int:
@@ -257,12 +257,17 @@ static func reaction_multiplier(attack_type: int, target_affinities: Array[int])
 			mult *= WEAK_MULT
 	return clamp(mult, 0.25, 2.25)
 
+# --- alias for older call sites/tests ---
+static func type_multiplier(attack_type: int, target_affinities: Array[int]) -> float:
+	return reaction_multiplier(attack_type, target_affinities)
+
 static func reaction_tag(mult: float) -> String:
 	if mult > 1.01:
 		return "WEAK"
 	if mult < 0.99:
 		return "RESIST"
 	return ""
+
 
 # ------------------------------------------------------------------------------
 # Dice helpers

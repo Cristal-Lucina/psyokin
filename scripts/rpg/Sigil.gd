@@ -54,4 +54,3 @@ func compatible_with(mind_type: String) -> bool:
 	if mind_type.to_lower() == "omega":
 		return true
 	return sigil_type.to_lower() == mind_type.to_lower()
-
