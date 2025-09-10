@@ -16,6 +16,7 @@ class_name CharacterData
 
 # --- Identity -----------------------------------------------------------------
 var name: String = "Unknown"
+var mind_type: String = "OMEGA"
 
 # --- Progression --------------------------------------------------------------
 var level: int = 1
@@ -32,6 +33,9 @@ var cha: int = 5
 # --- Affinities (for elemental reactions) -------------------------------------
 # Example: [RPGRules.AttackType.SLASH]
 var affinities: Array[int] = []
+
+# --- Skills -------------------------------------------------------------------
+var skills: Array[String] = []
 
 # --- Equipment (keep types loose if your item scripts aren't global classes) --
 var weapon: Object = null     # expected fields: attack_type:int, weapon_limit:int, dice:String
@@ -70,26 +74,26 @@ func total_armor_limit() -> int:
 	return lim
 
 # Effective stats (hook for equipment bonuses if/when you add them)
+func _bracelet_bonus(stat: String) -> int:
+	if bracelet != null and bracelet.has_method("total_bonuses"):
+		var t: Dictionary = bracelet.total_bonuses()
+		return int(t.get(stat, 0))
+	return 0
+
 func eff_str() -> int:
-	return strength
+	return strength + _bracelet_bonus("str")
 
 func eff_sta() -> int:
-	var bonus: int = 0
-	if bracelet != null:
-		if bracelet.has_method("get"):
-			bonus = int(bracelet.get("bonus_sta"))
-		elif "bonus_sta" in bracelet:
-			bonus = int(bracelet.bonus_sta)
-	return sta + bonus
+	return sta + _bracelet_bonus("sta")
 
 func eff_dex() -> int:
-	return dex
+	return dex + _bracelet_bonus("dex")
 
 func eff_int() -> int:
-	return intl
+	return intl + _bracelet_bonus("int")
 
 func eff_cha() -> int:
-	return cha
+	return cha + _bracelet_bonus("cha")
 
 # Max resource helpers (wrappers so old call sites like data.hp(rules) still work)
 func hp(_rules: RPGRules = null) -> int:

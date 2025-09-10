@@ -29,6 +29,7 @@ var _allies: Array[BattleActor] = []
 var _enemies: Array[BattleActor] = []
 var _needs_target: bool = false
 var _pending_action: String = ""
+var _pending_skill_id: String = ""
 
 # Map item index -> BattleActor
 var _index_to_actor: Array[BattleActor] = []
@@ -131,6 +132,7 @@ func request_command(for_actor: BattleActor, allies: Array[BattleActor], enemies
 
 	_actor_label.text = "%s (Lv %d)" % [for_actor.data.name, for_actor.data.level]
 	_btn_capture.disabled = not has_capture_items
+	_btn_skill.disabled = (_for_actor.data.skills.size() == 0)
 
 	_needs_target = false
 	_pending_action = ""
@@ -160,7 +162,21 @@ func _on_capture_pressed() -> void:
 	_needs_target = true
 
 func _on_skill_pressed() -> void:
-	emit_signal("command_selected", {"type": "defend"})
+	if _for_actor == null or _for_actor.data == null:
+		emit_signal("command_selected", {"type": "defend"})
+		return
+	var skills: Array[String] = _for_actor.data.skills
+	if skills.is_empty():
+		emit_signal("command_selected", {"type": "defend"})
+		return
+	_pending_action = "skill_select"
+	_pending_skill_id = ""
+	_targets_label.text = "Skills"
+	_targets_list.clear()
+	_index_to_actor.clear()
+	for s in skills:
+		_targets_list.add_item(String(s))
+	_needs_target = true
 
 func _on_item_pressed() -> void:
 	emit_signal("command_selected", {"type": "defend"})
@@ -202,6 +218,13 @@ func _populate_targets(pool: Array[BattleActor]) -> void:
 func _on_target_activated(index: int) -> void:
 	if not _needs_target:
 		return
+	if _pending_action == "skill_select":
+		var skills: Array[String] = _for_actor.data.skills
+		if index >= 0 and index < skills.size():
+			_pending_skill_id = String(skills[index])
+			_pending_action = "skill_target"
+			_populate_targets(_enemies)
+		return
 	if index < 0 or index >= _index_to_actor.size():
 		return
 	var target := _index_to_actor[index]
@@ -209,3 +232,6 @@ func _on_target_activated(index: int) -> void:
 		emit_signal("command_selected", {"type": "attack", "target": target})
 	elif _pending_action == "capture":
 		emit_signal("command_selected", {"type": "capture", "target": target})
+	elif _pending_action == "skill_target":
+		emit_signal("command_selected", {"type": "skill", "skill_id": _pending_skill_id, "target": target})
+	return
