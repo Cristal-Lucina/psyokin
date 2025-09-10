@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3 uid="uid://ba6uh1vru0ch4"]
+
+[ext_resource type="Script" uid="uid://cd5wo0w45kd2c" path="res://scripts/config/Tuning.gd" id="1_b0kqw"]
+
+[node name="Tuning" type="Node"]
+script = ExtResource("1_b0kqw")
+HP_BASE_ALLY = 20
+HP_BASE_ENEMY = 0

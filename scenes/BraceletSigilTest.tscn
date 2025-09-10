@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://csrqjnt74y3i4"]
+
+[ext_resource type="Script" uid="uid://bow24nyd8olkf" path="res://scripts/tests/Bracelet_Sigil_SmokeTest.gd" id="1_kfn7h"]
+
+[node name="BraceletSigilTest" type="Node"]
+script = ExtResource("1_kfn7h")

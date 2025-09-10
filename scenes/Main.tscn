@@ -1,0 +1,29 @@
+[gd_scene load_steps=7 format=3 uid="uid://bm0gqv23th35b"]
+
+[ext_resource type="Script" uid="uid://cngra5ijd64wu" path="res://scripts/InputTest.gd" id="1_elqb8"]
+[ext_resource type="Script" uid="uid://dl25wd1keivtc" path="res://scripts/rpg/BattleLoader.gd" id="1_rarhs"]
+[ext_resource type="Script" uid="uid://dxctxubqsoynb" path="res://scripts/rpg/EncounterManager.gd" id="2_rvslj"]
+[ext_resource type="PackedScene" uid="uid://7abrdj338his" path="res://scenes/Player.tscn" id="3_0bbpv"]
+[ext_resource type="Script" uid="uid://rivaygyckesx" path="res://scripts/tests/WorldDebugGrid.gd" id="4_rarhs"]
+[ext_resource type="Script" uid="uid://ckm01lkmjyjg0" path="res://scripts/ui/PauseMenu.gd" id="6_c01mt"]
+
+[node name="Main" type="Node2D"]
+script = ExtResource("1_elqb8")
+
+[node name="EncounterManager" type="Node" parent="."]
+script = ExtResource("2_rvslj")
+player_path = NodePath("../Player")
+max_enemies = 2
+
+[node name="Player" parent="." instance=ExtResource("3_0bbpv")]
+
+[node name="WorldGrid" type="Node2D" parent="."]
+script = ExtResource("4_rarhs")
+
+[node name="BattleLoader" type="Node" parent="."]
+script = ExtResource("1_rarhs")
+manager_path = NodePath("../EncounterManager")
+battle_scene_path = "uid://i8nyx0nqytpx"
+
+[node name="PauseMenu" type="CanvasLayer" parent="."]
+script = ExtResource("6_c01mt")

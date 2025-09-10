@@ -1,0 +1,27 @@
+# --- Godot 4 project ---
+.godot/
+.import/
+*.import
+
+# OS & editor junk
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak
+*.swp
+.vscode/
+.idea/
+
+# Build/exports
+export/
+build/
+bin/
+*.pck
+*.zip
+
+# Secrets / API keys / local config (keep these out of GitHub)
+.env
+*.key
+*.keystore
+secrets/
+*.secret

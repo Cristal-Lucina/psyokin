@@ -1,0 +1,10 @@
+[gd_scene load_steps=2 format=3 uid="uid://bjofg7ny047lx"]
+
+[ext_resource type="Script" uid="uid://c4lldspm745tb" path="res://scripts/rpg/ResultsScreen.gd" id="1_ny2nj"]
+
+[node name="Control" type="Control"]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+script = ExtResource("1_ny2nj")

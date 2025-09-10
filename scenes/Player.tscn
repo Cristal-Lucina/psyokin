@@ -1,0 +1,21 @@
+[gd_scene load_steps=4 format=3 uid="uid://7abrdj338his"]
+
+[ext_resource type="Script" uid="uid://d1k16eywyf3ia" path="res://scripts/PlayerOverworld.gd" id="1_v6fml"]
+[ext_resource type="Texture2D" uid="uid://bup72j7tdnn0y" path="res://icon.svg" id="2_3li8b"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_mdl7e"]
+size = Vector2(8, 12)
+
+[node name="Player" type="CharacterBody2D"]
+script = ExtResource("1_v6fml")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+texture = ExtResource("2_3li8b")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("RectangleShape2D_mdl7e")
+
+[node name="Camera2D" type="Camera2D" parent="."]
+zoom = Vector2(1.25, 1.25)
+position_smoothing_enabled = true
+position_smoothing_speed = 2.0
