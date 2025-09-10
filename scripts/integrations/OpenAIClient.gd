@@ -27,7 +27,15 @@ func _ready() -> void:
 	add_child(_http)
 	_http.request_completed.connect(_on_request_completed)
 
+func _exit_tree() -> void:
+	cancel()
+
 # --- Public API ---------------------------------------------------------------
+
+## Aborts any in-flight HTTP request.
+func cancel() -> void:
+	_http.cancel_request()
+	_in_flight = false
 
 ## Simple chat request. Emits chat_done(ok, text).
 func chat(prompt: String, system_prompt: String = "You are a helpful game dev assistant.") -> void:
