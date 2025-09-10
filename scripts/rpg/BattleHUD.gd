@@ -47,8 +47,8 @@ func bind_actors(allies: Array[BattleActor], enemies: Array[BattleActor]) -> voi
 		var l := Label.new()
 		_ally_labels.append(l)
 		ally_panel.add_child(l)
-		a.hp_changed.connect(func(cur: int, max_hp: int):
-			l.text = "%s  HP: %d / %d" % [a.data.name, cur, max_hp]
+		a.hp_changed.connect(func(actor: BattleActor, new_hp: int):
+			l.text = "%s  HP: %d / %d" % [actor.data.name, new_hp, actor.max_hp]
 		)
 		# initial fill
 		l.text = "%s  HP: %d / %d" % [a.data.name, a.current_hp, a.max_hp]
@@ -57,9 +57,9 @@ func bind_actors(allies: Array[BattleActor], enemies: Array[BattleActor]) -> voi
 		var l2 := Label.new()
 		_enemy_labels.append(l2)
 		enemy_panel.add_child(l2)
-		e.hp_changed.connect(func(cur: int, max_hp: int):
-			l2.text = "%s  HP: %d / %d" % [e.data.name, cur, max_hp]
-			if cur <= 0:
+		e.hp_changed.connect(func(actor: BattleActor, new_hp: int):
+			l2.text = "%s  HP: %d / %d" % [actor.data.name, new_hp, actor.max_hp]
+			if new_hp <= 0:
 				l2.add_theme_color_override("font_color", Color(0.65, 0.65, 0.65))
 		)
 		l2.text = "%s  HP: %d / %d" % [e.data.name, e.current_hp, e.max_hp]
