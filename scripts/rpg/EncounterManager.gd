@@ -48,11 +48,13 @@ func _ready() -> void:
 	else:
 		_rng.randomize()
 
-	if player_path != NodePath():
-		_player = get_node_or_null(player_path)
-	if _player == null:
-		push_warning("EncounterManager: player_path is not set or node not found.")
-	_reset_meter()
+        if player_path != NodePath():
+                _player = get_node_or_null(player_path) as Node2D
+                if _player == null:
+                        return
+        if _player == null:
+                push_warning("EncounterManager: player_path is not set or node not found.")
+        _reset_meter()
 
 	if debug_force_encounter_on_start:
 		_trigger_encounter_now()
