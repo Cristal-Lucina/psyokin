@@ -112,17 +112,19 @@ func _make_boots(nm: String, val: int, lim: int) -> Boots:
 
 ## Build a sample bracelet resource.
 func _make_bracelet(sta_bonus: int) -> Bracelet:
-        var br: Bracelet = Bracelet.new()
-        br.name = "Bracelet"
-        br.slot_count = 1
-        br.bonus_sta = sta_bonus
 
-        var void_sigil: Sigil = Sigil.new()
-        void_sigil.name = "Void Sigil"
-        void_sigil.sigil_type = "void"
-        void_sigil.unlock_skill_ids = [StringName("void_blast")]
-        br.sigils = [void_sigil]
-        return br
+	var br: Bracelet = Bracelet.new()
+	br.name = "Bracelet"
+	br.slot_count = 1
+	br.bonus_sta = sta_bonus
+
+	var void_sigil: Sigil = Sigil.new()
+	void_sigil.name = "Void Sigil"
+	void_sigil.sigil_type = "void"
+	void_sigil.unlock_skill_ids = [StringName("void_blast")]
+	br.sigils = [void_sigil]
+	return br
+
 
 ## Build a starter ally CharacterData resource.
 ## NOTE: '_rules' kept for future scaling hooks; underscore silences UNUSED_PARAMETER.
@@ -147,8 +149,10 @@ func _make_ally(
 	c.affinities = [RPGRules.AttackType.SLASH]
 	c.weapon = _make_weapon("Katana", "1d6+4", 1, RPGRules.AttackType.SLASH)
 	c.armor  = _make_armor("Gi", 1, 0)
-        c.boots  = _make_boots("Light Boots", 1, 0)
-        var br: Bracelet = _make_bracelet(1)
-        c.bracelet = br
-        c.skills = ["void_blast"]
-        return c
+
+		c.boots  = _make_boots("Light Boots", 1, 0)
+		var br: Bracelet = _make_bracelet(1)
+		c.bracelet = br
+		c.skills = ["void_blast"]
+		return c
+

@@ -503,16 +503,18 @@ func _make_sample_boots(b_name: String, val: int, lim: int) -> Boots:
 	return b
 
 func _make_sample_bracelet(sta_bonus: int) -> Bracelet:
-        var br: Bracelet = Bracelet.new()
-        br.name = "Bracelet"
-        br.slot_count = 1
-        br.bonus_sta = sta_bonus
-        var void_sigil: Sigil = Sigil.new()
-        void_sigil.name = "Void Sigil"
-        void_sigil.sigil_type = "void"
-        void_sigil.unlock_skill_ids = [StringName("void_blast")]
-        br.sigils = [void_sigil]
-        return br
+
+var br: Bracelet = Bracelet.new()
+br.name = "Bracelet"
+br.slot_count = 1
+br.bonus_sta = sta_bonus
+var void_sigil: Sigil = Sigil.new()
+void_sigil.name = "Void Sigil"
+void_sigil.sigil_type = "void"
+void_sigil.unlock_skill_ids = [StringName("void_blast")]
+br.sigils = [void_sigil]
+return br
+
 
 func _make_sample_enemy(index: int) -> CharacterData:
 	var c: CharacterData = CharacterData.new()
@@ -544,9 +546,10 @@ func _make_sample_ally(index: int) -> CharacterData:
 	c.intl = 4
 	c.cha = 4
 	c.affinities = [RPGRules.AttackType.SLASH]
-	c.weapon = _make_sample_weapon("Katana", "1d6+4", 1, RPGRules.AttackType.SLASH)
-	c.armor = _make_sample_armor("Gi", 1, 0)
-        c.boots = _make_sample_boots("Light Boots", 1, 0)
-        c.bracelet = _make_sample_bracelet(1)
-        c.skills = ["weapon_focus", "void_blast"]
-        return c
+
+c.weapon = _make_sample_weapon("Katana", "1d6+4", 1, RPGRules.AttackType.SLASH)
+c.armor = _make_sample_armor("Gi", 1, 0)
+c.boots = _make_sample_boots("Light Boots", 1, 0)
+c.bracelet = _make_sample_bracelet(1)
+c.skills = ["weapon_focus", "void_blast"]
+return c
