@@ -8,6 +8,7 @@ extends Skill
 class_name VoidBlast
 
 func _init() -> void:
+
 	id = StringName("void_blast")
 	name = "Void Blast"
 
@@ -21,3 +22,4 @@ func perform(user: BattleActor, target: BattleActor) -> void:
 			if s.unlock_skill_ids.has(StringName("void_blast")):
 				user.record_sigil_use(s)
 				break
+

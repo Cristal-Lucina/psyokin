@@ -174,6 +174,7 @@ func _on_skill_pressed() -> void:
 	_targets_label.text = "Skills"
 	_targets_list.clear()
 	_index_to_actor.clear()
+
 	for s in skills:
 		var id := String(s)
 		var label := id
@@ -181,6 +182,7 @@ func _on_skill_pressed() -> void:
 		if inst != null:
 			label = inst.name
 		_targets_list.add_item(label)
+
 	_needs_target = true
 
 func _on_item_pressed() -> void:
