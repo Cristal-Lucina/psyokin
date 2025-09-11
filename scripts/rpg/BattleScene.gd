@@ -1,3 +1,9 @@
+# scripts/rpg/BattleScene.gd
+# ------------------------------------------------------------------------------
+# Battle loop with manual commands, elemental reactions, row multipliers,
+# capture, and results handoff. Godot 4.4-safe and strictly typed.
+# ------------------------------------------------------------------------------
+
 extends Node2D
 class_name BattleScene
 
@@ -39,7 +45,7 @@ func _ready() -> void:
 	cam.make_current()
 	cam.global_position = (formation.ally_origin + formation.enemy_origin) * 0.5
 
-	# Background
+	# BG
 	if ClassDB.class_exists("WorldDebugGrid"):
 		var grid: Node2D = WorldDebugGrid.new()
 		grid.z_index = -100
@@ -52,7 +58,7 @@ func _ready() -> void:
 		bg.z_index = -100
 		add_child(bg)
 
-	# Encounter request
+	# Encounter
 	var count: int
 	var rows: Array[int]
 	if _ctx != null and _ctx.pending:
@@ -70,7 +76,7 @@ func _ready() -> void:
 	# HUD
 	var hud_script: Script = load(HUD_SCRIPT_PATH) as Script
 	if hud_script != null:
-		var hud_obj: Object = hud_script.new()
+		var hud_obj: Object = hud_script.new() as Object
 		if hud_obj is CanvasLayer:
 			var hud_layer: CanvasLayer = hud_obj as CanvasLayer
 			add_child(hud_layer)
@@ -80,7 +86,7 @@ func _ready() -> void:
 	# Command ribbon
 	var cmd_script: Script = load(COMMAND_HUD_PATH) as Script
 	if cmd_script != null:
-		var cmd_obj: Object = cmd_script.new()
+		var cmd_obj: Object = cmd_script.new() as Object
 		if cmd_obj is CommandHUD:
 			_cmd_ui = cmd_obj as CommandHUD
 			add_child(_cmd_ui)
@@ -92,7 +98,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("pause"):
 		_finish_and_show_results()
 
-# ---------------------- Spawning & wiring ---------------------------------
+# --- Spawn & wiring -----------------------------------------------------------
+
 func _wire_actor(actor: BattleActor, into_enemies: bool) -> void:
 	if into_enemies:
 		enemies.append(actor)
@@ -100,13 +107,12 @@ func _wire_actor(actor: BattleActor, into_enemies: bool) -> void:
 	else:
 		allies.append(actor)
 		actor.died.connect(_on_ally_died)
-	# (actor, new_hp)
 	actor.hp_changed.connect(_on_actor_hp_changed)
 
 func _spawn_allies_from_party() -> void:
 	var pos: Array[Vector2] = formation.get_ally_positions()
 	if _party == null:
-		push_error("PartyState autoload '/root/Partystate' missing. Using temporary allies.")
+		push_error("Partystate autoload missing; using temp allies.")
 		for i in 3:
 			var a: BattleActor = BattleActor.new()
 			var r: int = (RPGRules.Row.FRONT if i == 0 else RPGRules.Row.BACK)
@@ -151,17 +157,18 @@ func _remove_enemy_deferred(target: BattleActor) -> void:
 	target.set_physics_process(false)
 	_to_free.append(target)
 
-# ---------------------- Turn flow -----------------------------------------
+# --- Turn flow ----------------------------------------------------------------
+
 func _initiative_order() -> Array[Dictionary]:
 	var order: Array[Dictionary] = []
 	for a in allies:
 		if a.is_alive():
 			var ini_a: int = RPGRules.initiative(a.data.eff_dex(), a.data.total_armor_limit(), rules.roll_d20())
-			order.append({"actor": a, "ini": ini_a})
+			order.append({ "actor": a, "ini": ini_a })
 	for e in enemies:
 		if e.is_alive():
 			var ini_e: int = RPGRules.initiative(e.data.eff_dex(), e.data.total_armor_limit(), rules.roll_d20())
-			order.append({"actor": e, "ini": ini_e})
+			order.append({ "actor": e, "ini": ini_e })
 	order.sort_custom(func(x: Dictionary, y: Dictionary) -> bool:
 		return int(x["ini"]) > int(y["ini"])
 	)
@@ -207,11 +214,9 @@ func _enemy_take_turn(actor: BattleActor) -> void:
 	if living.is_empty():
 		return
 	var target: BattleActor = living[_rng.randi_range(0, living.size() - 1)]
-
 	var base_dmg: int = actor.perform_basic_attack(target)
 	if base_dmg <= 0:
 		return
-
 	_apply_reaction_row_damage_and_popup(actor, target, base_dmg)
 
 func _ally_take_turn(actor: BattleActor) -> void:
@@ -231,11 +236,9 @@ func _ally_take_turn(actor: BattleActor) -> void:
 	if t == "run":
 		_finish_and_show_results()
 		return
-
 	if t == "defend":
 		_spawn_popup("GUARD", actor.global_position)
 		return
-
 	if t == "attack":
 		var target_a: BattleActor = result.get("target") as BattleActor
 		if target_a != null and target_a.is_alive():
@@ -243,14 +246,12 @@ func _ally_take_turn(actor: BattleActor) -> void:
 			if base_dmg > 0:
 				_apply_reaction_row_damage_and_popup(actor, target_a, base_dmg)
 		return
-
 	if t == "skill":
 		var skill_id: String = String(result.get("skill_id", ""))
 		var target_s: BattleActor = result.get("target") as BattleActor
 		if skill_id != "" and target_s != null and target_s.is_alive():
 			actor.perform_skill(skill_id, target_s)
 		return
-
 	if t == "capture":
 		var target_c: BattleActor = result.get("target") as BattleActor
 		if target_c != null and target_c.is_alive():
@@ -265,26 +266,31 @@ func _ally_take_turn(actor: BattleActor) -> void:
 						_finish_and_show_results()
 		return
 
-# Centralized reaction/row post-processing
+# --- Element/row + final damage application ----------------------------------
+
 func _apply_reaction_row_damage_and_popup(attacker: BattleActor, target: BattleActor, base_dmg: int) -> void:
 	var attack_type: int = RPGRules.AttackType.SLASH
 	if attacker.data.weapon != null:
 		attack_type = int(attacker.data.weapon.attack_type)
 
-	var element_mult: float = RPGRules.reaction_multiplier(attack_type, target.data.affinities)
+	var target_aff: Array[int] = []
+	if target.data != null:
+		if target.data.has_method("eff_affinities"):
+			target_aff = target.data.eff_affinities()
+		else:
+			target_aff = target.data.affinities
+
+	var element_mult: float = RPGRules.reaction_multiplier(attack_type, target_aff)
 	var tag: String = RPGRules.reaction_tag(element_mult)
 
 	var row_off: float = RPGRules.row_offense_multiplier(attacker.row)
 	var row_def: float = RPGRules.row_defense_multiplier(target.row)
+
 	var total_mult: float = element_mult * row_off * row_def
+	var final_dmg: int = max(0, int(round(float(base_dmg) * total_mult)))
 
-	var final_dmg: int = int(round(float(base_dmg) * total_mult))
-	final_dmg = max(0, final_dmg)
-
-	# Apply only the extra to hit final number (base was already applied).
-	var extra: int = max(0, final_dmg - base_dmg)
-	if extra > 0 and target.is_alive():
-		target.apply_damage(extra)
+	if final_dmg > 0 and target.is_alive():
+		target.apply_damage(final_dmg)
 
 	var element_pct: int = int(round(element_mult * 100.0))
 	var off_pct: int = int(round(row_off * 100.0))
@@ -296,7 +302,8 @@ func _apply_reaction_row_damage_and_popup(attacker: BattleActor, target: BattleA
 		txt += " " + tag + "  [%d%% * %d%% * %d%% = %d%%]" % [element_pct, off_pct, def_pct, total_pct]
 	_spawn_popup(txt, target.global_position)
 
-# ---------------------- Victory & cleanup ---------------------------------
+# --- Victory / cleanup --------------------------------------------------------
+
 func _check_victory() -> int:
 	var any_allies: bool = false
 	for a in allies:
@@ -322,7 +329,8 @@ func _flush_deferred_frees() -> void:
 			n.queue_free()
 	_to_free.clear()
 
-# ---------------------- Results -------------------------------------------
+# --- Results handoff ----------------------------------------------------------
+
 func _finish_and_show_results() -> void:
 	if _is_finishing:
 		return
@@ -347,9 +355,10 @@ func _finish_and_show_results() -> void:
 
 		var levels_gained: int = a.data.add_xp(xp_total)
 
+		# Optional: let equipped sigils gain a bit of XP for being present
 		if a.data.bracelet != null:
 			for s in a.data.bracelet.equipped_sigils():
-				var gain := 1
+				var gain: int = 1
 				if a.sigil_use_counts.has(s):
 					gain += int(a.sigil_use_counts[s])
 				s.gain_xp(gain)
@@ -386,7 +395,8 @@ func _return_to_main() -> void:
 	if err != OK:
 		push_error("Failed to return to main: %s" % str(err))
 
-# ---------------------- Capture -------------------------------------------
+# --- Capture ------------------------------------------------------------------
+
 func _seed_capture_inventory() -> void:
 	var strong: CaptureItem = CaptureItem.new()
 	strong.name = "Snare Mk-II"
@@ -399,8 +409,8 @@ func _seed_capture_inventory() -> void:
 	basic.tier = 1
 
 	_capture_stacks = [
-		{"item": strong, "count": 2},
-		{"item": basic,  "count": 4}
+		{ "item": strong, "count": 2 },
+		{ "item": basic,  "count": 4 }
 	]
 
 func _should_attempt_capture(target: BattleActor) -> bool:
@@ -435,11 +445,12 @@ func _attempt_capture(user_actor: BattleActor, target: BattleActor) -> bool:
 		_spawn_popup("RESIST", target.global_position)
 		return false
 
-# ---------------------- Visual helpers ------------------------------------
+# --- Visual helpers -----------------------------------------------------------
+
 func _spawn_popup(txt: String, world_pos: Vector2) -> void:
 	var popup_script: Script = load(POPUP_SCRIPT_PATH) as Script
 	if popup_script != null:
-		var p_obj: Object = popup_script.new()
+		var p_obj: Object = popup_script.new() as Object
 		if p_obj is Node2D:
 			var pnode: Node2D = p_obj as Node2D
 			pnode.set("text", txt)
@@ -448,18 +459,22 @@ func _spawn_popup(txt: String, world_pos: Vector2) -> void:
 	else:
 		print("[POPUP]", txt, "@", world_pos)
 
-# ---------------------- Signals -------------------------------------------
+# --- Signals ------------------------------------------------------------------
+
 func _on_enemy_died(actor: BattleActor) -> void:
 	_record_defeated(actor)
 	_remove_enemy_deferred(actor)
 
 func _on_ally_died(_actor: BattleActor) -> void:
+	# Victory check will handle end state
 	pass
 
 func _on_actor_hp_changed(_actor: BattleActor, _new_hp: int) -> void:
+	# Refresh HUD if you keep direct references here (optional)
 	pass
 
-# ---------------------- Utils ---------------------------------------------
+# --- Utils --------------------------------------------------------------------
+
 func _get_battle_context() -> BattleContext:
 	var ctx: BattleContext = get_node_or_null("/root/BattleContext") as BattleContext
 	if ctx == null:
@@ -474,7 +489,8 @@ func _safe_delay(seconds: float) -> void:
 		return
 	await tree.create_timer(seconds).timeout
 
-# ---------------------- Sample data ---------------------------------------
+# --- Sample data --------------------------------------------------------------
+
 func _make_sample_weapon(w_name: String, dice_expr: String, limit: int, type_id: int) -> Weapon:
 	var w: Weapon = Weapon.new()
 	w.name = w_name
@@ -543,5 +559,7 @@ func _make_sample_ally(index: int) -> CharacterData:
 	c.armor = _make_sample_armor("Gi", 1, 0)
 	c.boots = _make_sample_boots("Light Boots", 1, 0)
 	c.bracelet = _make_sample_bracelet(1)
-	c.skills = ["weapon_focus", "void_blast"]
+
+	# ← StringName array
+	c.skills = [StringName("weapon_focus"), StringName("void_blast")]
 	return c

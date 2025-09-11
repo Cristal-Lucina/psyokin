@@ -1,143 +1,121 @@
-# scripts/rpg/CharacterData.gd
-# ------------------------------------------------------------------------------
-# Character sheet data used by BattleActor and systems:
-#  - Core stats and equipment
-#  - Armor value / armor limit aggregators
-#  - Effective stats (for initiative/capture, etc.)
-#  - XP store + level-up handling (returns levels gained)
-#  - Convenience wrappers: hp()/mp() that delegate to RPGRules
-# Notes:
-#  - This is a plain data container (RefCounted), not a Node.
-#  - BattleActor handles current_hp/mp at runtime; this class provides max values.
-# ------------------------------------------------------------------------------
-
-extends RefCounted
+extends Resource
 class_name CharacterData
 
-# --- Identity -----------------------------------------------------------------
-var name: String = "Unknown"
-var mind_type: String = "OMEGA"
+@export var name: String = "Unnamed"
+@export var level: int = 1
+@export var xp: int = 0
+@export var xp_to_next: int = 10
 
-# --- Progression --------------------------------------------------------------
-var level: int = 1
-var xp: int = 0
-var xp_to_next: int = 100   # refreshed via refresh_xp_to_next()
+@export var strength: int = 1
+@export var sta: int = 1
+@export var dex: int = 1
+@export var intl: int = 1
+@export var cha: int = 1
 
-# --- Base stats ---------------------------------------------------------------
-var strength: int = 5
-var sta: int = 5
-var dex: int = 5
-var intl: int = 5
-var cha: int = 5
+@export var affinities: Array[int] = []
 
-# --- Affinities (for elemental reactions) -------------------------------------
-# Example: [RPGRules.AttackType.SLASH]
-var affinities: Array[int] = []
+# Keep gear exported as Resource so load order never breaks parsing.
+@export var weapon: Resource   # Weapon
+@export var armor: Resource    # Armor
+@export var boots: Resource    # Boots
+@export var bracelet: Resource # Bracelet
 
-# --- Skills -------------------------------------------------------------------
-var skills: Array[String] = []
+# ← IMPORTANT: skills are StringName identifiers
+@export var skills: Array[StringName] = []
 
-# --- Equipment (keep types loose if your item scripts aren't global classes) --
-var weapon: Object = null     # expected fields: attack_type:int, weapon_limit:int, dice:String
-var armor: Object = null      # expected fields: armor_value:int, armor_limit:int
-var boots: Object = null      # expected fields: armor_value:int, armor_limit:int
-var bracelet: Object = null   # expected fields: bonus_sta:int (and slot_count:int later)
-
-# --- Constants ----------------------------------------------------------------
-const MAX_LEVEL: int = 99     # soft cap; adjust to your design
-
-# ------------------------------------------------------------------------------
-# Aggregates / derived helpers
-# ------------------------------------------------------------------------------
-func total_armor_value() -> int:
-	var val: int = 0
-	if armor != null and armor.has_method("get"):
-		val += int(armor.get("armor_value"))
-	elif armor != null and "armor_value" in armor:
-		val += int(armor.armor_value)
-	if boots != null and boots.has_method("get"):
-		val += int(boots.get("armor_value"))
-	elif boots != null and "armor_value" in boots:
-		val += int(boots.armor_value)
-	return val
-
-func total_armor_limit() -> int:
-	var lim: int = 0
-	if armor != null and armor.has_method("get"):
-		lim += int(armor.get("armor_limit"))
-	elif armor != null and "armor_limit" in armor:
-		lim += int(armor.armor_limit)
-	if boots != null and boots.has_method("get"):
-		lim += int(boots.get("armor_limit"))
-	elif boots != null and "armor_limit" in boots:
-		lim += int(boots.armor_limit)
-	return lim
-
-# Effective stats (hook for equipment bonuses if/when you add them)
-func _bracelet_bonus(stat: String) -> int:
-
-	if bracelet != null and bracelet.has_method("total_bonuses"):
-		var t: Dictionary = bracelet.total_bonuses()
-		return int(t.get(stat, 0))
-	return 0
-
-func eff_str() -> int:
-	return strength + _bracelet_bonus("str")
-
-func eff_sta() -> int:
-	return sta + _bracelet_bonus("sta")
-
-func eff_dex() -> int:
-	return dex + _bracelet_bonus("dex")
-
-func eff_int() -> int:
-	return intl + _bracelet_bonus("int")
-
-func eff_cha() -> int:
-	return cha + _bracelet_bonus("cha")
-
-
-# Max resource helpers (wrappers so old call sites like data.hp(rules) still work)
-func hp(_rules: RPGRules = null) -> int:
-	# Uses base sta (bracelet bonus is not auto-applied by RPGRules);
-	# if you want bracelet to affect max HP, pass a surrogate obj or adjust RPGRules.
-	return RPGRules.hp(self, -1, _rules)
-
-func mp(_rules: RPGRules = null) -> int:
-	return RPGRules.mp(self, -1, _rules)
-
-# ------------------------------------------------------------------------------
-# XP / Leveling
-# ------------------------------------------------------------------------------
 func refresh_xp_to_next() -> void:
-	# Prefer Progression.xp_to_next(level) if available in your project.
-	# Fallback curve if Progression is not present.
-	var next: int = 0
-	# If you have class_name Progression in your project, we can call it directly:
-	# (Your BattleScene already calls Progression.xp_multiplier, so this should exist.)
-	next = Progression.xp_to_next(level)
-	xp_to_next = max(1, next)
+	xp_to_next = 10 + level * 5
 
 func add_xp(amount: int) -> int:
-	# Adds XP, performs level ups, returns number of levels gained.
-	if amount <= 0:
-		return 0
-	xp += amount
 	var gained: int = 0
-
-	# Ensure xp_to_next is valid
-	if xp_to_next <= 0:
-		refresh_xp_to_next()
-
-	while xp >= xp_to_next and level < MAX_LEVEL:
+	xp += max(0, amount)
+	while xp >= xp_to_next:
 		xp -= xp_to_next
 		level += 1
 		gained += 1
 		refresh_xp_to_next()
-
-	# If at cap, clamp xp within the current band
-	if level >= MAX_LEVEL:
-		level = MAX_LEVEL
-		xp = min(xp, xp_to_next - 1)
-
 	return gained
+
+static func _get_num(src: Object, prop: String) -> int:
+	if src != null and src.has_method("get"):
+		var v: Variant = src.get(prop)
+		if typeof(v) == TYPE_INT or typeof(v) == TYPE_FLOAT:
+			return int(v)
+	return 0
+
+func _sum_sigils(stat_suffix: String) -> int:
+	var total := 0
+	if bracelet != null and bracelet.has_method("get"):
+		total += _get_num(bracelet, "bonus_" + stat_suffix)
+		var sigils_v: Variant = bracelet.get("sigils")
+		if typeof(sigils_v) == TYPE_ARRAY:
+			var arr: Array = sigils_v
+			for s_v in arr:
+				if s_v != null and (s_v as Object).has_method("get"):
+					total += _get_num(s_v, "bonus_" + stat_suffix)
+	return total
+
+func eff_str() -> int: return strength + _sum_sigils("str")
+func eff_sta() -> int: return sta       + _sum_sigils("sta")
+func eff_dex() -> int: return dex       + _sum_sigils("dex")
+func eff_int() -> int: return intl      + _sum_sigils("int")
+func eff_cha() -> int: return cha       + _sum_sigils("cha")
+
+func eff_affinities() -> Array[int]:
+	var uniq := {}
+	for a in affinities:
+		uniq[a] = true
+	if bracelet != null and bracelet.has_method("get"):
+		var sigils_v: Variant = bracelet.get("sigils")
+		if typeof(sigils_v) == TYPE_ARRAY:
+			var arr: Array = sigils_v
+			for s_v in arr:
+				if s_v == null:
+					continue
+				var adds_v: Variant = (s_v as Object).get("add_affinities")
+				if typeof(adds_v) == TYPE_ARRAY:
+					var adds: Array = adds_v
+					for a2 in adds:
+						if typeof(a2) == TYPE_INT:
+							uniq[int(a2)] = true
+	var out: Array[int] = []
+	for k in uniq.keys():
+		out.append(int(k))
+	return out
+
+func total_armor_value() -> int:
+	var v := 0
+	if armor != null:
+		v += _get_num(armor, "armor_value")
+	if boots != null:
+		v += _get_num(boots, "armor_value")
+	return v
+
+func total_armor_limit() -> int:
+	var lim := 0
+	if armor != null:
+		lim += _get_num(armor, "armor_limit")
+	if boots != null:
+		lim += _get_num(boots, "armor_limit")
+	return lim
+
+func weapon_attack_type() -> int:
+	if weapon != null and (weapon as Object).has_method("get"):
+		var at: Variant = (weapon as Object).get("attack_type")
+		if typeof(at) == TYPE_INT:
+			return int(at)
+	return RPGRules.AttackType.SLASH
+
+func roll_weapon_damage(rules: RPGRules) -> int:
+	if weapon == null or not (weapon as Object).has_method("get"):
+		return 0
+	var dice_v: Variant = (weapon as Object).get("dice")
+	if typeof(dice_v) != TYPE_STRING:
+		return 0
+	var expr := String(dice_v)
+	if expr == "":
+		return 0
+	return RPGRules.roll_dice(expr, rules)
+
+func physical_damage(rolled: int) -> int:
+	return RPGRules.atk_damage(self) + int(rolled)

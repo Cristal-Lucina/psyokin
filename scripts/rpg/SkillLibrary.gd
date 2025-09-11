@@ -1,19 +1,15 @@
-# scripts/rpg/SkillLibrary.gd
+# scripts/rpg/skills/SkillLibrary.gd
 # ------------------------------------------------------------------------------
-# Factory for creating Skill resources by id.
+# Factory to instantiate skills by ID.
 # ------------------------------------------------------------------------------
 
 extends Node
 class_name SkillLibrary
 
-static var _cache: Dictionary = {
-	"weapon_focus": preload("res://scripts/rpg/skills/WeaponFocus.gd"),
-	"void_blast": preload("res://scripts/rpg/skills/VoidBlast.gd"),
-
-}
-
 static func create(id: String) -> Skill:
-	var script: Variant = _cache.get(id)
-	if script == null:
-		return null
-	return (script as Script).new()
+	match id:
+		"void_blast":
+			var s: VoidBlast = VoidBlast.new()
+			return s
+		_:
+			return null
