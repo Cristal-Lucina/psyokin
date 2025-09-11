@@ -22,4 +22,3 @@ func perform(user: BattleActor, target: BattleActor) -> void:
 			if s.unlock_skill_ids.has(StringName("void_blast")):
 				user.record_sigil_use(s)
 				break
-

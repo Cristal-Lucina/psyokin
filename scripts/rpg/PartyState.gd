@@ -1,27 +1,13 @@
 # scripts/rpg/PartyState.gd
 # ------------------------------------------------------------------------------
-# WHAT:
-#   Persistent player-controlled party state (lives across scenes).
-#   Autoload this file as: Partystate  (lowercase 's' to avoid name collisions)
-#
-# RESPONSIBILITIES:
-#   - Hold the party roster (CharacterData resources).
-#   - Provide helpers to seed, query, add/remove members.
-#   - Seed a starter trio if the roster is empty (dev convenience).
-#
-# DESIGN NOTES:
-#   - Core stats are raised by calendar systems; battle level only affects
-#     derived combat stats (HP/MP/etc.) via RPGRules.
-#   - CharacterData instances live here so XP and levels persist across scenes.
+# Persistent player party state. Autoload this as: Partystate  (lowercase 's')
 # ------------------------------------------------------------------------------
 
 extends Node
 class_name PartyState
 
-# Maximum number of active party members used in battle spawning.
 const MAX_PARTY: int = 3
 
-# Persistent roster. Keep CharacterData instances, not copies, so XP persists.
 var members: Array[CharacterData] = []
 
 # ------------------------------------------------------------------------------
@@ -85,7 +71,6 @@ func clear() -> void:
 # Sample builders (used only by ensure_seed) — strongly typed and documented
 # ------------------------------------------------------------------------------
 
-## Build a sample weapon resource.
 func _make_weapon(nm: String, dice_expr: String, limit: int, type_id: int) -> Weapon:
 	var w: Weapon = Weapon.new()
 	w.name = nm
@@ -94,7 +79,6 @@ func _make_weapon(nm: String, dice_expr: String, limit: int, type_id: int) -> We
 	w.attack_type = type_id      # RPGRules.AttackType.*
 	return w
 
-## Build a sample armor resource.
 func _make_armor(nm: String, val: int, lim: int) -> Armor:
 	var ar: Armor = Armor.new()
 	ar.name = nm
@@ -102,7 +86,6 @@ func _make_armor(nm: String, val: int, lim: int) -> Armor:
 	ar.armor_limit = lim         # reduces dodge/initiative in your rules
 	return ar
 
-## Build a sample boots resource.
 func _make_boots(nm: String, val: int, lim: int) -> Boots:
 	var b: Boots = Boots.new()
 	b.name = nm
@@ -110,9 +93,7 @@ func _make_boots(nm: String, val: int, lim: int) -> Boots:
 	b.armor_limit = lim
 	return b
 
-## Build a sample bracelet resource.
 func _make_bracelet(sta_bonus: int) -> Bracelet:
-
 	var br: Bracelet = Bracelet.new()
 	br.name = "Bracelet"
 	br.slot_count = 1
@@ -124,7 +105,6 @@ func _make_bracelet(sta_bonus: int) -> Bracelet:
 	void_sigil.unlock_skill_ids = [StringName("void_blast")]
 	br.sigils = [void_sigil]
 	return br
-
 
 ## Build a starter ally CharacterData resource.
 ## NOTE: '_rules' kept for future scaling hooks; underscore silences UNUSED_PARAMETER.
@@ -138,7 +118,7 @@ func _make_ally(
 	c.xp = 0
 	c.refresh_xp_to_next()   # initialize xp_to_next via Progression
 
-	# Core stats (calendar will raise these; battle level affects derived stats)
+	# Core stats
 	c.strength = s
 	c.sta = st
 	c.dex = d
@@ -149,10 +129,10 @@ func _make_ally(
 	c.affinities = [RPGRules.AttackType.SLASH]
 	c.weapon = _make_weapon("Katana", "1d6+4", 1, RPGRules.AttackType.SLASH)
 	c.armor  = _make_armor("Gi", 1, 0)
+	c.boots  = _make_boots("Light Boots", 1, 0)
 
-		c.boots  = _make_boots("Light Boots", 1, 0)
-		var br: Bracelet = _make_bracelet(1)
-		c.bracelet = br
-		c.skills = ["void_blast"]
-		return c
+	var br: Bracelet = _make_bracelet(1)
+	c.bracelet = br
+	c.skills = ["void_blast"]
 
+	return c

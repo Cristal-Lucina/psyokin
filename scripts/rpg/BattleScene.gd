@@ -100,8 +100,7 @@ func _wire_actor(actor: BattleActor, into_enemies: bool) -> void:
 	else:
 		allies.append(actor)
 		actor.died.connect(_on_ally_died)
-
-	# Signal now emits (actor, new_hp)
+	# (actor, new_hp)
 	actor.hp_changed.connect(_on_actor_hp_changed)
 
 func _spawn_allies_from_party() -> void:
@@ -158,11 +157,11 @@ func _initiative_order() -> Array[Dictionary]:
 	for a in allies:
 		if a.is_alive():
 			var ini_a: int = RPGRules.initiative(a.data.eff_dex(), a.data.total_armor_limit(), rules.roll_d20())
-			order.append({ "actor": a, "ini": ini_a })
+			order.append({"actor": a, "ini": ini_a})
 	for e in enemies:
 		if e.is_alive():
 			var ini_e: int = RPGRules.initiative(e.data.eff_dex(), e.data.total_armor_limit(), rules.roll_d20())
-			order.append({ "actor": e, "ini": ini_e })
+			order.append({"actor": e, "ini": ini_e})
 	order.sort_custom(func(x: Dictionary, y: Dictionary) -> bool:
 		return int(x["ini"]) > int(y["ini"])
 	)
@@ -244,7 +243,6 @@ func _ally_take_turn(actor: BattleActor) -> void:
 			if base_dmg > 0:
 				_apply_reaction_row_damage_and_popup(actor, target_a, base_dmg)
 		return
-
 
 	if t == "skill":
 		var skill_id: String = String(result.get("skill_id", ""))
@@ -372,7 +370,6 @@ func _finish_and_show_results() -> void:
 			"levels_gained": levels_gained
 		})
 
-
 	if _results_bus != null:
 		_results_bus.set_results(allies_summary, _captured.duplicate(), [], return_scene_path)
 		var err: int = get_tree().change_scene_to_file("res://scenes/Results.tscn")
@@ -402,8 +399,8 @@ func _seed_capture_inventory() -> void:
 	basic.tier = 1
 
 	_capture_stacks = [
-		{ "item": strong, "count": 2 },
-		{ "item": basic,  "count": 4 }
+		{"item": strong, "count": 2},
+		{"item": basic,  "count": 4}
 	]
 
 func _should_attempt_capture(target: BattleActor) -> bool:
@@ -457,11 +454,9 @@ func _on_enemy_died(actor: BattleActor) -> void:
 	_remove_enemy_deferred(actor)
 
 func _on_ally_died(_actor: BattleActor) -> void:
-	# handled by victory check
 	pass
 
 func _on_actor_hp_changed(_actor: BattleActor, _new_hp: int) -> void:
-	# If you keep HUD refs here, refresh them.
 	pass
 
 # ---------------------- Utils ---------------------------------------------
@@ -503,18 +498,16 @@ func _make_sample_boots(b_name: String, val: int, lim: int) -> Boots:
 	return b
 
 func _make_sample_bracelet(sta_bonus: int) -> Bracelet:
-
-var br: Bracelet = Bracelet.new()
-br.name = "Bracelet"
-br.slot_count = 1
-br.bonus_sta = sta_bonus
-var void_sigil: Sigil = Sigil.new()
-void_sigil.name = "Void Sigil"
-void_sigil.sigil_type = "void"
-void_sigil.unlock_skill_ids = [StringName("void_blast")]
-br.sigils = [void_sigil]
-return br
-
+	var br: Bracelet = Bracelet.new()
+	br.name = "Bracelet"
+	br.slot_count = 1
+	br.bonus_sta = sta_bonus
+	var void_sigil: Sigil = Sigil.new()
+	void_sigil.name = "Void Sigil"
+	void_sigil.sigil_type = "void"
+	void_sigil.unlock_skill_ids = [StringName("void_blast")]
+	br.sigils = [void_sigil]
+	return br
 
 func _make_sample_enemy(index: int) -> CharacterData:
 	var c: CharacterData = CharacterData.new()
@@ -546,10 +539,9 @@ func _make_sample_ally(index: int) -> CharacterData:
 	c.intl = 4
 	c.cha = 4
 	c.affinities = [RPGRules.AttackType.SLASH]
-
-c.weapon = _make_sample_weapon("Katana", "1d6+4", 1, RPGRules.AttackType.SLASH)
-c.armor = _make_sample_armor("Gi", 1, 0)
-c.boots = _make_sample_boots("Light Boots", 1, 0)
-c.bracelet = _make_sample_bracelet(1)
-c.skills = ["weapon_focus", "void_blast"]
-return c
+	c.weapon = _make_sample_weapon("Katana", "1d6+4", 1, RPGRules.AttackType.SLASH)
+	c.armor = _make_sample_armor("Gi", 1, 0)
+	c.boots = _make_sample_boots("Light Boots", 1, 0)
+	c.bracelet = _make_sample_bracelet(1)
+	c.skills = ["weapon_focus", "void_blast"]
+	return c
