@@ -1,111 +1,97 @@
+# res://scripts/rpg/PartyState.gd
+# Simple party autoload that guarantees a starter hero with a
+# Basic Bracelet (1 slot) + Void Sigil that unlocks `void_blast`.
+
 extends Node
 class_name PartyState
 
-const MAX_PARTY: int = 3
 var members: Array[CharacterData] = []
 
-func ensure_seed(rules: RPGRules) -> void:
-	if members.size() > 0:
+func ensure_seed(_rules: RPGRules) -> void:
+	# If empty, create a starter character.
+	if members == null or not (members is Array) or (members as Array).is_empty():
+		var cd := CharacterData.new()
+		cd.name = "Player"
+		cd.level = 1
+		cd.xp = 0
+		cd.refresh_xp_to_next()
+		cd.strength = 3
+		cd.sta = 3
+		cd.dex = 3
+		cd.intl = 3
+		cd.cha = 3
+		cd.affinities = [RPGRules.AttackType.SLASH]
+
+		# Starter weapon
+		var w := Weapon.new()
+		w.name = "Practice Blade"
+		w.dice = "1d6"
+		w.weapon_limit = 0
+		w.attack_type = RPGRules.AttackType.SLASH
+		cd.weapon = w
+
+		# Basic bracelet with one slot + a Void Sigil that unlocks void_blast
+		var br := Bracelet.new()
+		br.name = "Basic Bracelet"
+		br.slot_count = 1
+		br.bonus_sta = 0
+
+		var sig := Sigil.new()
+		sig.name = "Void Sigil"
+		sig.sigil_type = "void"
+		sig.unlock_skill_ids = [StringName("void_blast")]
+
+		# Attach the sigil
+		br.sigils = [sig]
+		cd.bracelet = br
+
+		# Ensure the skill list exists and includes the L1 ability
+		cd.skills = [StringName("weapon_focus"), StringName("void_blast")]
+
+		members = [cd]
+
+	# Ensure lead exists
+	if members.is_empty():
 		return
-	members.clear()
-	members.append(_make_ally("Ally1", 3, 6, 5, 5, 4, 4, rules))
-	members.append(_make_ally("Ally2", 3, 5, 5, 6, 4, 4, rules))
-	members.append(_make_ally("Ally3", 3, 4, 5, 7, 4, 4, rules))
+	var lead: CharacterData = members[0]
 
-func active_members(limit: int = MAX_PARTY) -> Array[CharacterData]:
-	var out: Array[CharacterData] = []
-	var n: int = min(limit, members.size())
-	for i in n:
-		out.append(members[i])
-	return out
+	# Guarantee a bracelet
+	if lead.bracelet == null:
+		var br2 := Bracelet.new()
+		br2.name = "Basic Bracelet"
+		br2.slot_count = 1
+		br2.bonus_sta = 0
+		lead.bracelet = br2
 
-func add_member(data: CharacterData) -> bool:
-	if data == null:
-		return false
-	if members.has(data):
-		return false
-	for m in members:
-		if m.name == data.name:
-			return false
-	members.append(data)
-	return true
+	# Make sure a Void Sigil is equipped
+	var has_void := false
+	var existing: Array = []
+	if lead.bracelet.has_method("equipped_sigils"):
+		existing = lead.bracelet.equipped_sigils()
+	else:
+		var any: Variant = lead.bracelet.get("sigils")
+		if typeof(any) == TYPE_ARRAY:
+			existing = any
 
-func remove_member_by_name(member_name: String) -> bool:
-	for i in members.size():
-		if members[i].name == member_name:
-			members.remove_at(i)
-			return true
-	return false
+	for s in existing:
+		if s is Sigil and String(s.sigil_type) == "void":
+			has_void = true
+			break
 
-func find_member(member_name: String) -> CharacterData:
-	for m in members:
-		if m.name == member_name:
-			return m
-	return null
+	if not has_void:
+		var vs := Sigil.new()
+		vs.name = "Void Sigil"
+		vs.sigil_type = "void"
+		vs.unlock_skill_ids = [StringName("void_blast")]
+		var sigs: Array = []
+		var got: Variant = lead.bracelet.get("sigils")
+		if typeof(got) == TYPE_ARRAY:
+			sigs = got
+		sigs.append(vs)
+		lead.bracelet.set("sigils", sigs)
 
-func clear() -> void:
-	members.clear()
-
-func _make_weapon(nm: String, dice_expr: String, limit: int, type_id: int) -> Weapon:
-	var w: Weapon = Weapon.new()
-	w.name = nm
-	w.dice = dice_expr
-	w.weapon_limit = limit
-	w.attack_type = type_id
-	return w
-
-func _make_armor(nm: String, val: int, lim: int) -> Armor:
-	var ar: Armor = Armor.new()
-	ar.name = nm
-	ar.armor_value = val
-	ar.armor_limit = lim
-	return ar
-
-func _make_boots(nm: String, val: int, lim: int) -> Boots:
-	var b: Boots = Boots.new()
-	b.name = nm
-	b.armor_value = val
-	b.armor_limit = lim
-	return b
-
-func _make_bracelet(sta_bonus: int) -> Bracelet:
-	var br: Bracelet = Bracelet.new()
-	br.name = "Bracelet"
-	br.slot_count = 1
-	br.bonus_sta = sta_bonus
-
-	var void_sigil: Sigil = Sigil.new()
-	void_sigil.name = "Void Sigil"
-	void_sigil.sigil_type = "void"
-	void_sigil.unlock_skill_ids = [StringName("void_blast")]
-	br.sigils = [void_sigil]
-	return br
-
-func _make_ally(
-		nm: String, lvl: int, s: int, st: int, d: int, it: int, ch: int,
-		_rules: RPGRules
-	) -> CharacterData:
-	var c: CharacterData = CharacterData.new()
-	c.name = nm
-	c.level = lvl
-	c.xp = 0
-	c.refresh_xp_to_next()
-
-	c.strength = s
-	c.sta = st
-	c.dex = d
-	c.intl = it
-	c.cha = ch
-
-	c.affinities = [RPGRules.AttackType.SLASH]
-	c.weapon = _make_weapon("Katana", "1d6+4", 1, RPGRules.AttackType.SLASH)
-	c.armor  = _make_armor("Gi", 1, 0)
-	c.boots  = _make_boots("Light Boots", 1, 0)
-
-	var br: Bracelet = _make_bracelet(1)
-	c.bracelet = br
-
-	# ← StringName array (matches CharacterData.skills type)
-	c.skills = [StringName("void_blast")]
-
-	return c
+	# Ensure the hero actually has the skill in their list
+	if lead.skills == null or not (lead.skills is Array):
+		lead.skills = []
+	if not lead.skills.has(StringName("void_blast")):
+		lead.skills.append(StringName("void_blast"))
