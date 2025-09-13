@@ -1,11 +1,8 @@
 # scripts/rpg/BattleScene.gd
 # ------------------------------------------------------------------------------
-# Battle loop with manual commands, elemental reactions, row multipliers,
-# capture, and results handoff. Godot 4.4-safe and strictly typed.
-# Now includes:
-# - Accuracy/Evasion rolls (DEX-based) via CombatMath
-# - Crit rolls, damage breakdown logs
-# - "MISS" and damage popups with longer duration via CombatLog
+# Manual-command battle with reactions, rows, capture, and results handoff.
+# Adds: friendlier hit logging for basic attacks, MISS popup, slower popups,
+# and tuned INT-based 'void_blast' using CombatTuning.
 # ------------------------------------------------------------------------------
 
 extends Node2D
@@ -19,9 +16,6 @@ const AUTO_CAPTURE_THRESHOLD: float = 0.35
 const HUD_SCRIPT_PATH := "res://scripts/rpg/BattleHUD.gd"
 const POPUP_SCRIPT_PATH := "res://scripts/rpg/DamagePopup.gd"
 const COMMAND_HUD_PATH := "res://scripts/rpg/CommandHUD.gd"
-
-# Popup lifetime for MISS/damage (seconds)
-const POPUP_DURATION: float = 2.2
 
 var rules: RPGRules = RPGRules.new()
 var formation: Formation = Formation.new()
@@ -65,7 +59,7 @@ func _ready() -> void:
 		bg.z_index = -100
 		add_child(bg)
 
-	# Encounter
+	# Encounter setup
 	var count: int
 	var rows: Array[int]
 	if _ctx != null and _ctx.pending:
@@ -221,7 +215,18 @@ func _enemy_take_turn(actor: BattleActor) -> void:
 	if living.is_empty():
 		return
 	var target: BattleActor = living[_rng.randi_range(0, living.size() - 1)]
-	_resolve_basic_attack(actor, target, false)
+
+	# Log estimated hit% for visibility
+	var est_hit: float = CombatTuning.hit_chance(actor.data.eff_dex(), target.data.eff_dex())
+	print("[BASIC ENEMY] est hit%=", int(round(est_hit * 100.0)),
+		" A.DEX=", actor.data.eff_dex(), " T.DEX=", target.data.eff_dex())
+
+	var base_dmg: int = actor.perform_basic_attack(target)
+	if base_dmg <= 0:
+		_spawn_popup("MISS", target.global_position)
+		print("[BASIC ENEMY] MISS")
+		return
+	_apply_reaction_row_damage_and_popup(actor, target, base_dmg)
 
 func _ally_take_turn(actor: BattleActor) -> void:
 	if _cmd_ui == null:
@@ -241,26 +246,36 @@ func _ally_take_turn(actor: BattleActor) -> void:
 		_finish_and_show_results()
 		return
 	if t == "defend":
-		# Longer "GUARD" popup for consistency
-		CombatLog.popup(self, "GUARD", actor.global_position, POPUP_DURATION)
+		_spawn_popup("GUARD", actor.global_position)
 		return
 	if t == "attack":
 		var target_a: BattleActor = result.get("target") as BattleActor
 		if target_a != null and target_a.is_alive():
-			_resolve_basic_attack(actor, target_a, false)
+			var est_hit: float = CombatTuning.hit_chance(actor.data.eff_dex(), target_a.data.eff_dex())
+			print("[BASIC ALLY] est hit%=", int(round(est_hit * 100.0)),
+				" A.DEX=", actor.data.eff_dex(), " T.DEX=", target_a.data.eff_dex())
+
+			var base_dmg: int = actor.perform_basic_attack(target_a)
+			if base_dmg <= 0:
+				_spawn_popup("MISS", target_a.global_position)
+				print("[BASIC ALLY] MISS")
+			else:
+				_apply_reaction_row_damage_and_popup(actor, target_a, base_dmg)
 		return
 	if t == "skill":
-		# Keep your existing flow for skills; they can use magical model internally.
 		var skill_id: String = String(result.get("skill_id", ""))
 		var target_s: BattleActor = result.get("target") as BattleActor
 		if skill_id != "" and target_s != null and target_s.is_alive():
-			actor.perform_skill(skill_id, target_s)
+			if skill_id == "void_blast":
+				_cast_void_blast(actor, target_s)
+			else:
+				_spawn_popup("NO EFFECT", target_s.global_position)
 		return
 	if t == "capture":
 		var target_c: BattleActor = result.get("target") as BattleActor
 		if target_c != null and target_c.is_alive():
 			if not has_capture:
-				CombatLog.popup(self, "NO ITEMS", actor.global_position, POPUP_DURATION)
+				_spawn_popup("NO ITEMS", actor.global_position)
 			else:
 				var captured: bool = _attempt_capture(actor, target_c)
 				if captured:
@@ -269,64 +284,6 @@ func _ally_take_turn(actor: BattleActor) -> void:
 					if w != 0:
 						_finish_and_show_results()
 		return
-
-# --- Core attack resolution (rolls + logging + popup) -------------------------
-
-func _resolve_basic_attack(attacker: BattleActor, defender: BattleActor, magical: bool) -> void:
-	if attacker == null or defender == null:
-		return
-	if not attacker.is_alive() or not defender.is_alive():
-		return
-
-	var att_name: String = attacker.data.name
-	var def_name: String = defender.data.name
-
-	var rng := RandomNumberGenerator.new()
-	rng.randomize()
-
-	# 1) HIT roll
-	var hit: Dictionary = CombatMath.roll_hit(attacker.data, defender.data, rng)
-	CombatLog.dump("HIT", {
-		"att": att_name,
-		"def": def_name,
-		"chance": hit.get("chance"),
-		"roll": hit.get("roll"),
-		"success": hit.get("success"),
-		"att_dex": hit.get("att_dex"),
-		"def_dex": hit.get("def_dex")
-	})
-	if not bool(hit.get("success", false)):
-		CombatLog.popup(self, "MISS", defender.global_position, POPUP_DURATION)
-		return
-
-	# 2) CRIT roll
-	var crit: Dictionary = CombatMath.roll_crit(attacker.data, defender.data, rng)
-	CombatLog.dump("CRIT", {
-		"att": att_name,
-		"def": def_name,
-		"chance": crit.get("chance"),
-		"roll": crit.get("roll"),
-		"success": crit.get("success")
-	})
-
-	# 3) Base damage model
-	var dmg: Dictionary = (CombatMath.damage_magical(attacker.data, defender.data, rng) if magical else CombatMath.damage_physical(attacker.data, defender.data, rng))
-	if bool(crit.get("success", false)):
-		dmg["final"] = int(round(float(dmg["final"]) * CombatTuning.CRIT_MULT))
-		dmg["crit_mult"] = CombatTuning.CRIT_MULT
-
-	CombatLog.dump("DMG", {
-		"att": att_name,
-		"def": def_name,
-		"model": dmg.get("model"),
-		"base": dmg.get("base"),
-		"variance": dmg.get("variance"),
-		"final": dmg.get("final"),
-		"crit": crit.get("success", false)
-	})
-
-	# 4) Apply reactions/rows and show popup
-	_apply_reaction_row_damage_and_popup(attacker, defender, int(dmg["final"]))
 
 # --- Element/row + final damage application ----------------------------------
 
@@ -359,25 +316,58 @@ func _apply_reaction_row_damage_and_popup(attacker: BattleActor, target: BattleA
 	var def_pct: int = int(round(row_def * 100.0))
 	var total_pct: int = int(round(total_mult * 100.0))
 
-	# Log multipliers for transparency/debugging
-	CombatLog.dump("MULT", {
-		"att": attacker.data.name,
-		"def": target.data.name,
-		"elem_mult": element_mult,
-		"row_off": row_off,
-		"row_def": row_def,
-		"total_mult": total_mult,
-		"base": base_dmg,
-		"final": final_dmg,
-		"tag": tag
-	})
-
 	var txt: String = "%d" % final_dmg
 	if tag != "":
 		txt += " " + tag + "  [%d%% * %d%% * %d%% = %d%%]" % [element_pct, off_pct, def_pct, total_pct]
+	_spawn_popup(txt, target.global_position)
 
-	# Longer-lived popup
-	CombatLog.popup(self, txt, target.global_position, POPUP_DURATION)
+# --- Magic helper (row-only UI for magic) ------------------------------------
+
+func _apply_row_only_damage_and_popup(attacker: BattleActor, target: BattleActor, base_dmg: int, label: String) -> void:
+	var row_off: float = RPGRules.row_offense_multiplier(attacker.row)
+	var row_def: float = RPGRules.row_defense_multiplier(target.row)
+	var total_mult: float = row_off * row_def
+	var final_dmg: int = max(0, int(round(float(base_dmg) * total_mult)))
+
+	if final_dmg > 0 and target.is_alive():
+		target.apply_damage(final_dmg)
+
+	var off_pct: int = int(round(row_off * 100.0))
+	var def_pct: int = int(round(row_def * 100.0))
+	var total_pct: int = int(round(total_mult * 100.0))
+
+	var txt: String = "%d %s  [100%% * %d%% * %d%% = %d%%]" % [final_dmg, label, off_pct, def_pct, total_pct]
+	_spawn_popup(txt, target.global_position)
+
+# --- Skill: Void Blast (uses CombatTuning) ------------------------------------
+
+func _cast_void_blast(attacker: BattleActor, target: BattleActor) -> void:
+	var atk_int: int = (attacker.data.eff_intl() if attacker.data.has_method("eff_intl") else attacker.data.intl)
+	var atk_dex: int = (attacker.data.eff_dex() if attacker.data.has_method("eff_dex") else attacker.data.dex)
+	var tgt_dex: int = (target.data.eff_dex() if target.data.has_method("eff_dex") else target.data.dex)
+	var tgt_sta: int = target.data.sta
+
+	var hit_chance: float = CombatTuning.hit_chance(atk_dex, tgt_dex)
+	var hit_roll: float = _rng.randf()
+	print("[VOID_BLAST] hit%=", int(round(hit_chance * 100.0)), " roll=", "%.3f" % hit_roll,
+		" | A.DEX=", atk_dex, " T.DEX=", tgt_dex)
+
+	if hit_roll > hit_chance:
+		_spawn_popup("MISS", target.global_position)
+		print("[VOID_BLAST] MISS")
+		return
+
+	var crit_ch: float = CombatTuning.crit_chance(atk_dex, tgt_dex)
+	var crit_roll: float = _rng.randf()
+	var crit_mult: float = (1.5 if crit_roll <= crit_ch else 1.0)
+	print("[VOID_BLAST] crit%=", int(round(crit_ch * 100.0)), " roll=", "%.3f" % crit_roll,
+		" -> ", (crit_mult > 1.0))
+
+	var base_i: int = CombatTuning.magic_base(atk_int, tgt_sta)
+	var base_crit: int = max(1, int(round(float(base_i) * crit_mult)))
+	print("[VOID_BLAST] A.INT=", atk_int, " T.STA=", tgt_sta, " base=", base_i, " -> ", base_crit)
+
+	_apply_row_only_damage_and_popup(attacker, target, base_crit, "VOID")
 
 # --- Victory / cleanup --------------------------------------------------------
 
@@ -516,22 +506,22 @@ func _attempt_capture(user_actor: BattleActor, target: BattleActor) -> bool:
 		_captured.append("%s Lv.%d" % [target.data.name, target.data.level])
 		_record_defeated(target)
 		_remove_enemy_deferred(target)
-		CombatLog.popup(self, "CAPTURED", target.global_position, POPUP_DURATION)
+		_spawn_popup("CAPTURED", target.global_position)
 		return true
 	else:
-		CombatLog.popup(self, "RESIST", target.global_position, POPUP_DURATION)
+		_spawn_popup("RESIST", target.global_position)
 		return false
 
 # --- Visual helpers -----------------------------------------------------------
 
 func _spawn_popup(txt: String, world_pos: Vector2) -> void:
-	# Legacy path: kept for compatibility. Prefer CombatLog.popup for longer UI life.
 	var popup_script: Script = load(POPUP_SCRIPT_PATH) as Script
 	if popup_script != null:
 		var p_obj: Object = popup_script.new() as Object
 		if p_obj is Node2D:
 			var pnode: Node2D = p_obj as Node2D
 			pnode.set("text", txt)
+			pnode.set("lifetime_sec", 1.60) # ensure slower lifetime
 			add_child(pnode)
 			pnode.global_position = world_pos + Vector2(0, -20)
 	else:
@@ -544,11 +534,9 @@ func _on_enemy_died(actor: BattleActor) -> void:
 	_remove_enemy_deferred(actor)
 
 func _on_ally_died(_actor: BattleActor) -> void:
-	# Victory check will handle end state
 	pass
 
 func _on_actor_hp_changed(_actor: BattleActor, _new_hp: int) -> void:
-	# Refresh HUD if you keep direct references here (optional)
 	pass
 
 # --- Utils --------------------------------------------------------------------
@@ -638,6 +626,5 @@ func _make_sample_ally(index: int) -> CharacterData:
 	c.boots = _make_sample_boots("Light Boots", 1, 0)
 	c.bracelet = _make_sample_bracelet(1)
 
-	# ← Skills seeded via StringName
 	c.skills = [StringName("weapon_focus"), StringName("void_blast")]
 	return c

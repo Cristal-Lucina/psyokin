@@ -29,6 +29,8 @@ var _stats_grid_labels: Dictionary = {}   # key -> Label
 var _skills_container: VBoxContainer
 var _line_by_stat: Dictionary = {}        # { "str": Dictionary, ... }
 
+const MindPanelClass := preload("res://scripts/ui/MindPanel.gd")
+
 const SKILL_DISPLAY: Dictionary = {
 	"weapon_focus": "Weapon Focus",
 	"trip_capture_boost": "Trip (Capture +)",
@@ -63,7 +65,6 @@ const SKILL_DISPLAY: Dictionary = {
 }
 
 # ---------- helpers to avoid Variant warnings ----------
-# NOTE: parameter name is "prop_name" (not "name") to avoid shadowing Node.name
 func _get_int_prop(obj: Object, prop_name: String, def: int = 0) -> int:
 	if obj == null:
 		return def
@@ -73,7 +74,6 @@ func _get_int_prop(obj: Object, prop_name: String, def: int = 0) -> int:
 			return int(v)
 	return def
 
-# NOTE: parameter name is "prop_name" (not "name") to avoid shadowing Node.name
 func _get_str_prop(obj: Object, prop_name: String, def: String = "") -> String:
 	if obj != null and obj.has_method("get"):
 		var v: Variant = obj.get(prop_name)
@@ -99,6 +99,11 @@ func _ready() -> void:
 		_line_by_stat = {"str": {}, "sta": {}, "dex": {}, "intl": {}, "cha": {}}
 
 	_build_ui()
+
+	# --- Add Mind tab after other tabs are created ---
+	_add_mind_tab()
+	# -------------------------------------------------
+
 	visible = open_on_start
 	_refresh_stats_page()
 	_refresh_skills_page()
@@ -218,7 +223,7 @@ func _build_ui() -> void:
 
 		if not _has_skillsdb:
 			var warn: Label = Label.new()
-			warn.text = "SkillsDB not found – skills page is a placeholder."
+			warn.text = "SkillsDB not found - skills page is a placeholder."
 			_skills_container.add_child(warn)
 	else:
 		var off: VBoxContainer = VBoxContainer.new()
@@ -230,24 +235,57 @@ func _build_ui() -> void:
 	var items_page: VBoxContainer = VBoxContainer.new()
 	items_page.add_child(_placeholder_lbl("Items (WIP)"))
 	_tabs.add_child(items_page)
+	items_page.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_tabs.set_tab_title(_tabs.get_tab_count() - 1, "Items")
 
 	var equip_page: VBoxContainer = VBoxContainer.new()
 	equip_page.add_child(_placeholder_lbl("Equipment (WIP)"))
 	_tabs.add_child(equip_page)
+	equip_page.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_tabs.set_tab_title(_tabs.get_tab_count() - 1, "Equipment")
 
 	var quests_page: VBoxContainer = VBoxContainer.new()
 	quests_page.add_child(_placeholder_lbl("Quests (WIP)"))
 	_tabs.add_child(quests_page)
+	quests_page.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_tabs.set_tab_title(_tabs.get_tab_count() - 1, "Quests")
 
 	var system_page: VBoxContainer = VBoxContainer.new()
 	system_page.add_child(_placeholder_lbl("System (WIP)"))
 	_tabs.add_child(system_page)
+	system_page.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_tabs.set_tab_title(_tabs.get_tab_count() - 1, "System")
 
 	_populate_character_lists()
+
+# Create the Mind tab as a proper TabContainer page with padding.
+func _add_mind_tab() -> void:
+	if _tabs == null:
+		var t: TabContainer = _find_first_tabcontainer(self)
+		if t != null:
+			_tabs = t
+	if _tabs == null:
+		return
+	if _tabs.get_node_or_null("Mind") != null:
+		return
+
+	# Page with padding
+	var page := MarginContainer.new()
+	page.name = "Mind"
+	page.add_theme_constant_override("margin_left", 24)
+	page.add_theme_constant_override("margin_right", 24)
+	page.add_theme_constant_override("margin_top", 16)
+	page.add_theme_constant_override("margin_bottom", 16)
+	page.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	page.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_tabs.add_child(page)
+	_tabs.set_tab_title(_tabs.get_tab_count() - 1, "Mind")
+
+	# Panel inside the page (let the container size it)
+	var mind: Control = MindPanelClass.new()
+	mind.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mind.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	page.add_child(mind)
 
 func _add_stat_line(grid: GridContainer, title: String, key: String) -> void:
 	var name_lbl: Label = Label.new()
@@ -277,23 +315,27 @@ func _party() -> Array:
 	return (m as Array) if typeof(m) == TYPE_ARRAY else []
 
 func _populate_character_lists() -> void:
-	if _char_dd_stats: _char_dd_stats.clear()
-	if _char_dd_skills: _char_dd_skills.clear()
+	if _char_dd_stats:
+		_char_dd_stats.clear()
+	if _char_dd_skills:
+		_char_dd_skills.clear()
 
 	var party: Array = _party()
 	var count: int = party.size()
 
-	var i: int = 0
-	while i < count:
+	for i in count:
 		var cd: Object = party[i]
 		var nm: String = _get_str_prop(cd, "name", "Unknown")
-		if _char_dd_stats:  _char_dd_stats.add_item(nm, i)
-		if _char_dd_skills: _char_dd_skills.add_item(nm, i)
-		i += 1
+		if _char_dd_stats:
+			_char_dd_stats.add_item(nm, i)
+		if _char_dd_skills:
+			_char_dd_skills.add_item(nm, i)
 
 	if count > 0:
-		if _char_dd_stats:  _char_dd_stats.selected = 0
-		if _char_dd_skills: _char_dd_skills.selected = 0
+		if _char_dd_stats:
+			_char_dd_stats.selected = 0
+		if _char_dd_skills:
+			_char_dd_skills.selected = 0
 
 func _selected_character_from(dd: OptionButton) -> Object:
 	var party: Array = _party()
@@ -353,7 +395,10 @@ func _refresh_skills_page() -> void:
 	var cd: Object = _selected_character_from(_char_dd_skills)
 	if cd == null or not _has_skillsdb:
 		var lbl: Label = Label.new()
-		lbl.text = "Select a character." if _has_skillsdb else "SkillsDB not found – skills page is a placeholder."
+		if _has_skillsdb:
+			lbl.text = "Select a character."
+		else:
+			lbl.text = "SkillsDB not found - skills page is a placeholder."
 		_skills_container.add_child(lbl)
 		return
 
@@ -372,10 +417,7 @@ func _refresh_skills_page() -> void:
 
 	rows.sort_custom(Callable(self, "_rows_less"))
 
-	var i: int = 0
-	while i < rows.size():
-		var row: Dictionary = rows[i]
-
+	for row in rows:
 		var hb: HBoxContainer = HBoxContainer.new()
 		hb.add_theme_constant_override("separation", 8)
 
@@ -403,7 +445,6 @@ func _refresh_skills_page() -> void:
 		hb.add_child(status)
 
 		_skills_container.add_child(hb)
-		i += 1
 
 # table: {level(int) : Array[String]}
 func _flatten_line(stat_slug: String, table: Dictionary, unlocked: Array[String], out_rows: Array[Dictionary]) -> void:
@@ -421,6 +462,16 @@ func _flatten_line(stat_slug: String, table: Dictionary, unlocked: Array[String]
 				"id": sid,
 				"unlocked": unlocked.has(sid)
 			})
+
+# ---------- find TabContainer utility ----------
+func _find_first_tabcontainer(node: Node) -> TabContainer:
+	if node is TabContainer:
+		return node as TabContainer
+	for child in node.get_children():
+		var t: TabContainer = _find_first_tabcontainer(child)
+		if t != null:
+			return t
+	return null
 
 # ---------- signals ----------
 func _on_stats_char_changed(_index: int) -> void:
