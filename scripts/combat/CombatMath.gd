@@ -1,599 +1,190 @@
-# scripts/rpg/BattleScene.gd
-# ------------------------------------------------------------------------------
-# Modular battle loop calling CombatMath for ACC/EVA/HIT/DMG/DEF.
-# ------------------------------------------------------------------------------
+# res://scripts/combat/CombatMath.gd
+extends RefCounted
+class_name CombatMath
 
-extends Node2D
-# (class_name removed to avoid hiding a global script class)
+enum Channel { NEUTRAL, BRAWN, MIND }
 
-@export_file("*.tscn") var return_scene_path: String = "res://scenes/Main.tscn"
+const BASE_ACC: float = 0.80
+const HIT_MIN: float = 0.05
+const HIT_MAX: float = 0.95
 
-const XP_BASE_PER_LEVEL: int = 100
-const AUTO_CAPTURE_THRESHOLD: float = 0.35
+const WPN_CHN_ON_DMG_MULT: float = 1.10
+const WPN_CHN_OFF_DMG_MULT: float = 0.90
+const WPN_CHN_ON_ACC_BONUS: int = 5
+const WPN_CHN_OFF_ACC_BONUS: int = -5
 
-const HUD_SCRIPT_PATH := "res://scripts/rpg/BattleHUD.gd"
-const POPUP_SCRIPT_PATH := "res://scripts/rpg/DamagePopup.gd"
-const COMMAND_HUD_PATH := "res://scripts/rpg/CommandHUD.gd"
+const ARM_CHN_ON_EVA_BONUS: int = 5
+const ARM_CHN_OFF_EVA_BONUS: int = -5
 
-# Use global script class directly (CombatMath.gd has `class_name CombatMath`)
-# const CombatMath := preload("res://scripts/combat/CombatMath.gd")  # ← removed
+static func brw(cd: CharacterData) -> int: return cd.strength
+static func mnd(cd: CharacterData) -> int: return cd.cha
+static func vtl(cd: CharacterData) -> int: return cd.sta
+static func fcs(cd: CharacterData) -> int: return cd.intl
+static func tpo(cd: CharacterData) -> int: return cd.dex
 
-var rules: RPGRules = RPGRules.new()
-var formation: Formation = Formation.new()
+static func level_quarter(level: int) -> int:
+	return maxi(1, int(ceil(float(level) / 4.0)))
 
-@onready var _ctx: BattleContext = _get_battle_context()
-@onready var _party: PartyState = get_node_or_null("/root/Partystate") as PartyState
-@onready var _results_bus: ResultsContext = get_node_or_null("/root/Resultscontext") as ResultsContext
+static func level_half(level: int) -> int:
+	return maxi(1, int(ceil(float(level) / 2.0)))
 
-var allies: Array[BattleActor] = []
-var enemies: Array[BattleActor] = []
-
-var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
-var _defeated_enemy_levels: Array[int] = []
-var _captured: Array[String] = []
-var _capture_stacks: Array[Dictionary] = []
-
-var _to_free: Array[Node] = []
-var _is_finishing: bool = false
-var _cmd_ui: CommandHUD
-
-func _ready() -> void:
-	_rng.randomize()
-
-	var cam: Camera2D = Camera2D.new()
-	cam.enabled = true
-	add_child(cam)
-	cam.make_current()
-	cam.global_position = (formation.ally_origin + formation.enemy_origin) * 0.5
-
-	if ClassDB.class_exists("WorldDebugGrid"):
-		var grid: Node2D = WorldDebugGrid.new()
-		grid.z_index = -100
-		add_child(grid)
-	else:
-		var bg: ColorRect = ColorRect.new()
-		bg.color = Color(0.10, 0.10, 0.12, 1.0)
-		bg.anchor_right = 1.0
-		bg.anchor_bottom = 1.0
-		bg.z_index = -100
-		add_child(bg)
-
-	var count: int
-	var rows: Array[int]
-	if _ctx != null and _ctx.pending:
-		count = _ctx.count
-		rows = _ctx.rows.duplicate()
-		_ctx.clear()
-	else:
-		count = 3
-		rows = [RPGRules.Row.FRONT, RPGRules.Row.FRONT, RPGRules.Row.BACK]
-
-	_spawn_allies_from_party()
-	_spawn_enemies(count, rows)
-	_seed_capture_inventory()
-
-	var hud_script: Script = load(HUD_SCRIPT_PATH) as Script
-	if hud_script != null:
-		var hud_obj: Object = hud_script.new() as Object
-		if hud_obj is CanvasLayer:
-			var hud_layer: CanvasLayer = hud_obj as CanvasLayer
-			add_child(hud_layer)
-			if hud_layer.has_method("bind_actors"):
-				hud_layer.call("bind_actors", allies, enemies)
-
-	var cmd_script: Script = load(COMMAND_HUD_PATH) as Script
-	if cmd_script != null:
-		var cmd_obj: Object = cmd_script.new() as Object
-		if cmd_obj is CommandHUD:
-			_cmd_ui = cmd_obj as CommandHUD
-			add_child(_cmd_ui)
-
-	await get_tree().process_frame
-	await _run_battle_loop()
-
-func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("pause"):
-		_finish_and_show_results()
-
-# --- Spawn & wiring -----------------------------------------------------------
-
-func _wire_actor(actor: BattleActor, into_enemies: bool) -> void:
-	if into_enemies:
-		enemies.append(actor)
-		actor.died.connect(_on_enemy_died)
-	else:
-		allies.append(actor)
-		actor.died.connect(_on_ally_died)
-	actor.hp_changed.connect(_on_actor_hp_changed)
-
-func _spawn_allies_from_party() -> void:
-	var pos: Array[Vector2] = formation.get_ally_positions()
-	if _party == null:
-		push_error("Partystate autoload missing; using temp allies.")
-		for i in 3:
-			var a: BattleActor = BattleActor.new()
-			var r: int = (RPGRules.Row.FRONT if i == 0 else RPGRules.Row.BACK)
-			var data_t: CharacterData = _make_sample_ally(i)
-			data_t.refresh_xp_to_next()
-			a.setup(data_t, r, false, rules)
-			add_child(a)
-			a.global_position = pos[i]
-			_wire_actor(a, false)
-		return
-
-	_party.ensure_seed(rules)
-	var n: int = min(3, _party.members.size())
-	for i in n:
-		var actor: BattleActor = BattleActor.new()
-		var r2: int = (RPGRules.Row.FRONT if i == 0 else RPGRules.Row.BACK)
-		var d: CharacterData = _party.members[i]
-		actor.setup(d, r2, false, rules)
-		add_child(actor)
-		actor.global_position = pos[i]
-		_wire_actor(actor, false)
-
-func _spawn_enemies(count: int, rows: Array[int]) -> void:
-	var pos: Array[Vector2] = formation.get_enemy_positions_for_rows(rows)
-	for i in count:
-		var e: BattleActor = BattleActor.new()
-		e.setup(_make_sample_enemy(i), rows[i], true, rules)
-		e.died.connect(_on_enemy_died)
-		add_child(e)
-		e.global_position = pos[i]
-		_wire_actor(e, true)
-
-func _record_defeated(dead: BattleActor) -> void:
-	_defeated_enemy_levels.append(dead.data.level)
-
-func _remove_enemy_deferred(target: BattleActor) -> void:
-	var idx: int = enemies.find(target)
-	if idx >= 0:
-		enemies.remove_at(idx)
-	target.visible = false
-	target.set_process(false)
-	target.set_physics_process(false)
-	_to_free.append(target)
-
-# --- Turn flow ----------------------------------------------------------------
-
-func _initiative_order() -> Array[Dictionary]:
-	var order: Array[Dictionary] = []
-	for a in allies:
-		if a.is_alive():
-			var ini_a: int = RPGRules.initiative(a.data.eff_dex(), a.data.total_armor_limit(), rules.roll_d20())
-			order.append({ "actor": a, "ini": ini_a })
-	for e in enemies:
-		if e.is_alive():
-			var ini_e: int = RPGRules.initiative(e.data.eff_dex(), e.data.total_armor_limit(), rules.roll_d20())
-			order.append({ "actor": e, "ini": ini_e })
-	order.sort_custom(func(x: Dictionary, y: Dictionary) -> bool:
-		return int(x["ini"]) > int(y["ini"])
-	)
-	return order
-
-func _run_battle_loop() -> void:
-	while true:
-		var order: Array[Dictionary] = _initiative_order()
-		if order.is_empty():
-			break
-
-		for item in order:
-			var obj: Object = item.get("actor")
-			if not is_instance_valid(obj):
-				continue
-			var actor: BattleActor = obj as BattleActor
-			if actor == null or not actor.is_alive():
-				continue
-
-			var pre: int = _check_victory()
-			if pre != 0:
-				_finish_and_show_results()
-				return
-
-			if actor.is_enemy:
-				_enemy_take_turn(actor)
-			else:
-				await _ally_take_turn(actor)
-
-			await _safe_delay(0.25)
-
-		_flush_deferred_frees()
-		var post: int = _check_victory()
-		if post != 0:
-			_finish_and_show_results()
-			return
-
-# --- New math: basic attack + void blast -------------------------------------
-
-func _basic_attack_new(attacker: BattleActor, target: BattleActor) -> void:
-	var ad: CharacterData = attacker.data
-	var td: CharacterData = target.data
-	var w: Weapon = ad.weapon
-	var ar: Armor = td.armor
-	var bt: Boots = td.boots
-
-	var acc: int = CombatMath.atk_acc(ad, w)
-	var eva: int = CombatMath.atk_eva(td, ar, bt)
-	var hit: float = CombatMath.hit_chance(acc, eva)
-	var roll: float = _rng.randf()
-	print("[ATK] acc=", acc, " eva=", eva, " => hit%=", int(round(hit * 100.0)), " roll=", "%.3f" % roll)
-
-	if roll > hit:
-		_spawn_popup("MISS", target.global_position)
-		print("[ATK] MISS")
-		return
-
-	var pre: int = CombatMath.atk_raw_damage(ad, w)
-
-	var row_off: float = RPGRules.row_offense_multiplier(attacker.row)
-	var row_def: float = RPGRules.row_defense_multiplier(target.row)
-	var post_rows: int = max(0, int(round(float(pre) * row_off * row_def)))
-
-	var final_dmg: int = CombatMath.apply_atk_def(post_rows, td)
-	if final_dmg > 0 and target.is_alive():
-		target.apply_damage(final_dmg)
-
-	var off_pct: int = int(round(row_off * 100.0))
-	var def_pct: int = int(round(row_def * 100.0))
-	_spawn_popup("%d ATK  [%d%% * %d%%]" % [final_dmg, off_pct, def_pct], target.global_position)
-
-func _cast_void_blast(attacker: BattleActor, target: BattleActor) -> void:
-	var ad: CharacterData = attacker.data
-	var td: CharacterData = target.data
-	var w: Weapon = ad.weapon
-	var ar: Armor = td.armor
-	var bt: Boots = td.boots
-
-	var acc: int = CombatMath.mnd_acc(ad, w)
-	var eva: int = CombatMath.mnd_eva(td, ar, bt)
-	var hit: float = CombatMath.hit_chance(acc, eva)
-	var roll: float = _rng.randf()
-	print("[VOID] acc=", acc, " eva=", eva, " => hit%=", int(round(hit * 100.0)), " roll=", "%.3f" % roll)
-
-	if roll > hit:
-		_spawn_popup("MISS", target.global_position)
-		print("[VOID] MISS")
-		return
-
-	var pre: int = CombatMath.mnd_raw_damage(ad, w)
-
-	var row_off: float = RPGRules.row_offense_multiplier(attacker.row)
-	var row_def: float = RPGRules.row_defense_multiplier(target.row)
-	var post_rows: int = max(0, int(round(float(pre) * row_off * row_def)))
-
-	var final_dmg: int = CombatMath.apply_mnd_def(post_rows, td)
-	if final_dmg > 0 and target.is_alive():
-		target.apply_damage(final_dmg)
-
-	var off_pct: int = int(round(row_off * 100.0))
-	var def_pct: int = int(round(row_def * 100.0))
-	_spawn_popup("%d VOID  [%d%% * %d%%]" % [final_dmg, off_pct, def_pct], target.global_position)
-
-# --- Enemy/Ally turns ---------------------------------------------------------
-
-func _enemy_take_turn(actor: BattleActor) -> void:
-	var living: Array[BattleActor] = []
-	for a in allies:
-		if a.is_alive():
-			living.append(a)
-	if living.is_empty():
-		return
-	var target: BattleActor = living[_rng.randi_range(0, living.size() - 1)]
-	_basic_attack_new(actor, target)
-
-func _ally_take_turn(actor: BattleActor) -> void:
-	if _cmd_ui == null:
-		_enemy_take_turn(actor)
-		return
-
-	var has_capture: bool = false
-	for s in _capture_stacks:
-		if int(s["count"]) > 0:
-			has_capture = true
-			break
-
-	var result: Dictionary = await _cmd_ui.request_command(actor, allies, enemies, has_capture)
-	var t: String = String(result.get("type", ""))
-
-	if t == "run":
-		_finish_and_show_results()
-		return
-	if t == "defend":
-		_spawn_popup("GUARD", actor.global_position)
-		return
-	if t == "attack":
-		var target_a: BattleActor = result.get("target") as BattleActor
-		if target_a != null and target_a.is_alive():
-			_basic_attack_new(actor, target_a)
-		return
-	if t == "skill":
-		var skill_id: String = String(result.get("skill_id", ""))
-		var target_s: BattleActor = result.get("target") as BattleActor
-		if skill_id != "" and target_s != null and target_s.is_alive():
-			if skill_id == "void_blast":
-				_cast_void_blast(actor, target_s)
-			else:
-				_spawn_popup("NO EFFECT", target_s.global_position)
-		return
-	if t == "capture":
-		var target_c: BattleActor = result.get("target") as BattleActor
-		if target_c != null and target_c.is_alive():
-			if not has_capture:
-				_spawn_popup("NO ITEMS", actor.global_position)
-			else:
-				var captured: bool = _attempt_capture(actor, target_c)
-				if captured:
-					await _safe_delay(0.4)
-					var w: int = _check_victory()
-					if w != 0:
-						_finish_and_show_results()
-		return
-
-# --- Victory / cleanup --------------------------------------------------------
-
-func _check_victory() -> int:
-	var any_allies: bool = false
-	for a in allies:
-		if a.is_alive():
-			any_allies = true
-			break
-	var any_enemies: bool = false
-	for e in enemies:
-		if e.is_alive():
-			any_enemies = true
-			break
-	if not any_enemies and not any_allies:
+static func _get_i(obj: Object, prop: String) -> int:
+	if obj == null or not obj.has_method("get"):
 		return 0
-	if not any_enemies:
-		return +1
-	if not any_allies:
-		return -1
+	var v: Variant = obj.get(prop)
+	return int(v) if (typeof(v) == TYPE_INT or typeof(v) == TYPE_FLOAT) else 0
+
+static func _get_s(obj: Object, prop: String) -> String:
+	if obj == null or not obj.has_method("get"):
+		return ""
+	var v: Variant = obj.get(prop)
+	return String(v) if typeof(v) == TYPE_STRING else ""
+
+static func weapon_atk_dmg(w: Weapon) -> int:
+	var val: int = _get_i(w, "atk_dmg")
+	return val if val > 0 else 1
+
+static func weapon_mnd_dmg(w: Weapon) -> int:
+	var val: int = _get_i(w, "mnd_dmg")
+	return val if val > 0 else 1
+
+static func weapon_acc_atk(w: Weapon) -> int:
+	var v: int = _get_i(w, "acc_atk")
+	if v != 0: return v
+	return _get_i(w, "acc")
+
+static func weapon_acc_mnd(w: Weapon) -> int:
+	var v: int = _get_i(w, "acc_mnd")
+	if v != 0: return v
+	return _get_i(w, "acc")
+
+static func weapon_channel(w: Weapon) -> Channel:
+	var s: String = _get_s(w, "channel").to_lower()
+	if s.begins_with("brawn") or s.begins_with("brw"): return Channel.BRAWN
+	if s.begins_with("mind")  or s.begins_with("mnd"): return Channel.MIND
+	return Channel.NEUTRAL
+
+static func armor_penalty(armor: Armor) -> int: return _get_i(armor, "penalty")
+static func boots_penalty(boots: Boots) -> int: return _get_i(boots, "penalty")
+
+static func armor_eva(armor: Armor) -> int:
+	var v: int = _get_i(armor, "eva")
+	if v != 0: return v
+	return _get_i(armor, "eva_bonus")
+
+static func boots_eva(boots: Boots) -> int:
+	var v: int = _get_i(boots, "eva")
+	if v != 0: return v
+	return _get_i(boots, "eva_bonus")
+
+static func armor_channel_for(obj: Object) -> Channel:
+	var s: String = _get_s(obj, "channel").to_lower()
+	if s.begins_with("brawn") or s.begins_with("brw"): return Channel.BRAWN
+	if s.begins_with("mind")  or s.begins_with("mnd"): return Channel.MIND
+	return Channel.NEUTRAL
+
+static func headband_bonus(cd: CharacterData) -> int:
+	if cd == null or not cd.has_method("get"): return 0
+	var hb_v: Variant = cd.get("hdb")
+	if typeof(hb_v) == TYPE_INT or typeof(hb_v) == TYPE_FLOAT: return int(hb_v)
+	var head_v: Variant = cd.get("headband")
+	if typeof(head_v) == TYPE_OBJECT:
+		var head_obj: Object = head_v
+		return _get_i(head_obj, "hdb")
 	return 0
 
-func _flush_deferred_frees() -> void:
-	for n in _to_free:
-		if is_instance_valid(n):
-			n.queue_free()
-	_to_free.clear()
+static func actor_channel(cd: CharacterData) -> Channel:
+	var a: int = brw(cd)
+	var b: int = mnd(cd)
+	if a > b: return Channel.BRAWN
+	if b > a: return Channel.MIND
+	return Channel.NEUTRAL
 
-# --- Results handoff ----------------------------------------------------------
+static func _rel(actor_ch: Channel, item_ch: Channel) -> int:
+	if item_ch == Channel.NEUTRAL or actor_ch == Channel.NEUTRAL: return 0
+	return +1 if actor_ch == item_ch else -1
 
-func _finish_and_show_results() -> void:
-	if _is_finishing:
-		return
-	_is_finishing = true
+static func atk_raw_damage(cd: CharacterData, w: Weapon) -> int:
+	var scale: int = level_quarter(cd.level)
+	var base: int = brw(cd) * scale
+	var wpn: int = weapon_atk_dmg(w)
+	var rel: int = _rel(actor_channel(cd), weapon_channel(w))
+	if rel > 0: wpn = int(ceil(float(wpn) * WPN_CHN_ON_DMG_MULT))
+	elif rel < 0: wpn = int(ceil(float(wpn) * WPN_CHN_OFF_DMG_MULT))
+	return maxi(1, base + wpn)
 
-	_flush_deferred_frees()
+static func mnd_raw_damage(cd: CharacterData, w: Weapon) -> int:
+	var scale: int = level_quarter(cd.level)
+	var base: int = mnd(cd) * scale
+	var wpn: int = weapon_mnd_dmg(w)
+	var rel: int = _rel(actor_channel(cd), weapon_channel(w))
+	if rel > 0: wpn = int(ceil(float(wpn) * WPN_CHN_ON_DMG_MULT))
+	elif rel < 0: wpn = int(ceil(float(wpn) * WPN_CHN_OFF_DMG_MULT))
+	return maxi(1, base + wpn)
 
-	var allies_summary: Array[Dictionary] = []
-	for a in allies:
-		if not a.is_alive():
-			continue
+static func atk_acc(cd: CharacterData, w: Weapon) -> int:
+	var lvl2: int = int(floor(float(cd.level) / 2.0))
+	var vtl_q: int = int(floor(float(vtl(cd)) / 4.0))
+	var core: int = 20 + lvl2 + (4 * tpo(cd) + vtl_q)
+	var acc: int = core + weapon_acc_atk(w)
+	var rel: int = _rel(actor_channel(cd), weapon_channel(w))
+	if rel > 0: acc += WPN_CHN_ON_ACC_BONUS
+	elif rel < 0: acc += WPN_CHN_OFF_ACC_BONUS
+	return acc
 
-		var xp_total: int = 0
-		for elvl in _defeated_enemy_levels:
-			var base: int = XP_BASE_PER_LEVEL * elvl
-			var mult: float = Progression.xp_multiplier(a.data.level, elvl)
-			xp_total += int(round(float(base) * mult))
+static func mnd_acc(cd: CharacterData, w: Weapon) -> int:
+	var lvl2: int = int(floor(float(cd.level) / 2.0))
+	var fcs_q: int = int(floor(float(fcs(cd)) / 4.0))
+	var core: int = 20 + lvl2 + (4 * tpo(cd) + fcs_q)
+	var acc: int = core + weapon_acc_mnd(w)
+	var rel: int = _rel(actor_channel(cd), weapon_channel(w))
+	if rel > 0: acc += WPN_CHN_ON_ACC_BONUS
+	elif rel < 0: acc += WPN_CHN_OFF_ACC_BONUS
+	return acc
 
-		var lvl_before: int = a.data.level
-		var xp_before: int = a.data.xp
-		var xptn_before: int = a.data.xp_to_next
+static func atk_eva(cd: CharacterData, armor: Armor, boots: Boots) -> int:
+	var lvl2: int = int(floor(float(cd.level) / 2.0))
+	var vtl_q: int = int(floor(float(vtl(cd)) / 4.0))
+	var core: int = 20 + lvl2 + (4 * tpo(cd) + vtl_q)
+	var eva: int = core + armor_eva(armor) + boots_eva(boots)
+	var rel_a: int = _rel(actor_channel(cd), armor_channel_for(armor))
+	var rel_b: int = _rel(actor_channel(cd), armor_channel_for(boots))
+	if rel_a > 0: eva += ARM_CHN_ON_EVA_BONUS
+	elif rel_a < 0: eva += ARM_CHN_OFF_EVA_BONUS
+	if rel_b > 0: eva += ARM_CHN_ON_EVA_BONUS
+	elif rel_b < 0: eva += ARM_CHN_OFF_EVA_BONUS
+	return eva
 
-		var levels_gained: int = a.data.add_xp(xp_total)
+static func mnd_eva(cd: CharacterData, armor: Armor, boots: Boots) -> int:
+	var lvl2: int = int(floor(float(cd.level) / 2.0))
+	var fcs_q: int = int(floor(float(fcs(cd)) / 4.0))
+	var core: int = 20 + lvl2 + (4 * tpo(cd) + fcs_q)
+	var eva: int = core + armor_eva(armor) + boots_eva(boots)
+	var rel_a: int = _rel(actor_channel(cd), armor_channel_for(armor))
+	var rel_b: int = _rel(actor_channel(cd), armor_channel_for(boots))
+	if rel_a > 0: eva += ARM_CHN_ON_EVA_BONUS
+	elif rel_a < 0: eva += ARM_CHN_OFF_EVA_BONUS
+	if rel_b > 0: eva += ARM_CHN_ON_EVA_BONUS
+	elif rel_b < 0: eva += ARM_CHN_OFF_EVA_BONUS
+	return eva
 
-		if a.data.bracelet != null and a.data.bracelet.has_method("equipped_sigils"):
-			for s in a.data.bracelet.equipped_sigils():
-				var gain: int = 1
-				if a.sigil_use_counts.has(s):
-					gain += int(a.sigil_use_counts[s])
-				s.gain_xp(gain)
+static func hit_chance(att_acc: int, def_eva: int) -> float:
+	var ratio: float = float(att_acc) / maxf(1.0, float(def_eva))
+	return clamp(BASE_ACC * ratio, HIT_MIN, HIT_MAX)
 
-		var lvl_after: int = a.data.level
-		var xp_after: int = a.data.xp
-		var xptn_after: int = a.data.xp_to_next
+static func apply_atk_def(dmg_after_rows: int, defender: CharacterData) -> int:
+	var denom: float = float(vtl(defender)) / 100.0 + 1.0
+	return max(0, int(floor(float(dmg_after_rows) / denom)))
 
-		allies_summary.append({
-			"name": a.data.name,
-			"level_before": lvl_before,
-			"level_after": lvl_after,
-			"xp_gained": xp_total,
-			"xp_before": xp_before,
-			"xp_to_next_before": xptn_before,
-			"xp_after": xp_after,
-			"xp_to_next_after": xptn_after,
-			"levels_gained": levels_gained
-		})
+static func apply_mnd_def(dmg_after_rows: int, defender: CharacterData) -> int:
+	var denom: float = float(fcs(defender)) / 100.0 + 1.0
+	return max(0, int(floor(float(dmg_after_rows) / denom)))
 
-	if _results_bus != null:
-		_results_bus.set_results(allies_summary, _captured.duplicate(), [], return_scene_path)
-		var err: int = get_tree().change_scene_to_file("res://scenes/Results.tscn")
-		if err != OK:
-			push_error("BattleScene: failed to open results; returning to main.")
-			_return_to_main()
-	else:
-		for e in allies_summary:
-			print(e)
-		_return_to_main()
+static func max_hp(cd: CharacterData) -> int:
+	return vtl(cd) * level_half(cd.level) + 10 + headband_bonus(cd)
 
-func _return_to_main() -> void:
-	var err: int = get_tree().change_scene_to_file(return_scene_path)
-	if err != OK:
-		push_error("Failed to return to main: %s" % str(err))
+static func max_mp(cd: CharacterData) -> int:
+	return fcs(cd) * level_half(cd.level) + 10 + headband_bonus(cd)
 
-# --- Capture (unchanged) ------------------------------------------------------
-
-func _seed_capture_inventory() -> void:
-	var strong: CaptureItem = CaptureItem.new()
-	strong.name = "Snare Mk-II"
-	strong.base_rate = 0.45
-	strong.tier = 2
-
-	var basic: CaptureItem = CaptureItem.new()
-	basic.name = "Snare Mk-I"
-	basic.base_rate = 0.25
-	basic.tier = 1
-
-	_capture_stacks = [
-		{ "item": strong, "count": 2 },
-		{ "item": basic,  "count": 4 }
-	]
-
-func _should_attempt_capture(target: BattleActor) -> bool:
-	if _capture_stacks.is_empty():
-		return false
-	var hp_ratio: float = float(target.current_hp) / float(target.max_hp)
-	return hp_ratio <= AUTO_CAPTURE_THRESHOLD
-
-func _attempt_capture(user_actor: BattleActor, target: BattleActor) -> bool:
-	var stack_idx: int = -1
-	for i in _capture_stacks.size():
-		if int(_capture_stacks[i]["count"]) > 0:
-			stack_idx = i
-			break
-	if stack_idx == -1:
-		return false
-
-	var item: CaptureItem = _capture_stacks[stack_idx]["item"]
-	var hp_ratio: float = float(target.current_hp) / float(target.max_hp)
-	var chance: float = Progression.capture_chance(user_actor.data.eff_cha(), target.data.level, hp_ratio, item.base_rate)
-	var roll: float = _rng.randf()
-
-	_capture_stacks[stack_idx]["count"] = int(_capture_stacks[stack_idx]["count"]) - 1
-
-	if roll <= chance:
-		_captured.append("%s Lv.%d" % [target.data.name, target.data.level])
-		_record_defeated(target)
-		_remove_enemy_deferred(target)
-		_spawn_popup("CAPTURED", target.global_position)
-		return true
-	else:
-		_spawn_popup("RESIST", target.global_position)
-		return false
-
-# --- Visual helpers -----------------------------------------------------------
-
-func _spawn_popup(txt: String, world_pos: Vector2) -> void:
-	var popup_script: Script = load(POPUP_SCRIPT_PATH) as Script
-	if popup_script != null:
-		var p_obj: Object = popup_script.new() as Object
-		if p_obj is Node2D:
-			var pnode: Node2D = p_obj as Node2D
-			pnode.set("text", txt)
-			pnode.set("lifetime_sec", 1.60)
-			add_child(pnode)
-			pnode.global_position = world_pos + Vector2(0, -20)
-	else:
-		print("[POPUP]", txt, "@", world_pos)
-
-# --- Signals ------------------------------------------------------------------
-
-func _on_enemy_died(actor: BattleActor) -> void:
-	_record_defeated(actor)
-	_remove_enemy_deferred(actor)
-
-func _on_ally_died(_actor: BattleActor) -> void:
-	pass
-
-func _on_actor_hp_changed(_actor: BattleActor, _new_hp: int) -> void:
-	pass
-
-# --- Utils --------------------------------------------------------------------
-
-func _get_battle_context() -> BattleContext:
-	var ctx: BattleContext = get_node_or_null("/root/BattleContext") as BattleContext
-	if ctx == null:
-		ctx = get_node_or_null("/root/Battlecontext") as BattleContext
-	return ctx
-
-func _safe_delay(seconds: float) -> void:
-	if _is_finishing or not is_inside_tree():
-		return
-	var tree: SceneTree = get_tree()
-	if tree == null:
-		return
-	await tree.create_timer(seconds).timeout
-
-# --- Sample data helpers (unchanged) -----------------------------------------
-
-func _make_sample_weapon(w_name: String, dice_expr: String, limit: int, type_id: int) -> Weapon:
-	var w: Weapon = Weapon.new()
-	w.name = w_name
-	w.dice = dice_expr
-	w.weapon_limit = limit
-	w.attack_type = type_id
-	w.set("atk_dmg", 3)
-	w.set("mnd_dmg", 2)
-	w.set("acc_atk", 0)
-	w.set("acc_mnd", 0)
-	w.set("channel", "neutral")
-	return w
-
-func _make_sample_armor(a_name: String, val: int, lim: int) -> Armor:
-	var ar: Armor = Armor.new()
-	ar.name = a_name
-	ar.armor_value = val
-	ar.armor_limit = lim
-	ar.set("eva", 0)
-	ar.set("penalty", 0)
-	ar.set("channel", "neutral")
-	return ar
-
-func _make_sample_boots(b_name: String, val: int, lim: int) -> Boots:
-	var b: Boots = Boots.new()
-	b.name = b_name
-	b.armor_value = val
-	b.armor_limit = lim
-	b.set("eva", 0)
-	b.set("penalty", 0)
-	b.set("channel", "neutral")
-	return b
-
-func _make_sample_bracelet(sta_bonus: int) -> Bracelet:
-	var br: Bracelet = Bracelet.new()
-	br.name = "Bracelet"
-	br.slot_count = 1
-	br.bonus_sta = sta_bonus
-	var void_sigil: Sigil = Sigil.new()
-	void_sigil.name = "Void Sigil"
-	void_sigil.sigil_type = "void"
-	void_sigil.unlock_skill_ids = [StringName("void_blast")]
-	br.sigils = [void_sigil]
-	return br
-
-func _make_sample_enemy(index: int) -> CharacterData:
-	var c: CharacterData = CharacterData.new()
-	c.name = "Enemy" + str(index + 1)
-	c.level = 3
-	c.xp = 0
-	c.refresh_xp_to_next()
-	c.strength = 5
-	c.sta = 5
-	c.dex = 4
-	c.intl = 3
-	c.cha = 3
-	c.affinities = [RPGRules.AttackType.IMPACT, RPGRules.AttackType.FIRE]
-	c.weapon = _make_sample_weapon("Claws", "1d4", 0, RPGRules.AttackType.SLASH)
-	c.armor = _make_sample_armor("Hide", 0, 0)
-	c.boots = _make_sample_boots("None", 0, 0)
-	c.bracelet = _make_sample_bracelet(0)
-	return c
-
-func _make_sample_ally(index: int) -> CharacterData:
-	var c: CharacterData = CharacterData.new()
-	c.name = "Ally" + str(index + 1)
-	c.level = 3
-	c.xp = 0
-	c.refresh_xp_to_next()
-	c.strength = 6 - index
-	c.sta = 5
-	c.dex = 5 + index
-	c.intl = 4
-	c.cha = 4
-	c.affinities = [RPGRules.AttackType.SLASH]
-	c.weapon = _make_sample_weapon("Katana", "1d6+4", 1, RPGRules.AttackType.SLASH)
-	c.armor = _make_sample_armor("Gi", 1, 0)
-	c.boots = _make_sample_boots("Light Boots", 1, 0)
-	c.bracelet = _make_sample_bracelet(1)
-	c.skills = [StringName("weapon_focus"), StringName("void_blast")]
-	return c
+static func act_roll(cd: CharacterData, armor: Armor, boots: Boots, d20: int) -> int:
+	return tpo(cd) - armor_penalty(armor) + boots_penalty(boots) + d20

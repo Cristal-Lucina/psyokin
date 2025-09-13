@@ -16,6 +16,7 @@ const AUTO_CAPTURE_THRESHOLD: float = 0.35
 const HUD_SCRIPT_PATH := "res://scripts/rpg/BattleHUD.gd"
 const POPUP_SCRIPT_PATH := "res://scripts/rpg/DamagePopup.gd"
 const COMMAND_HUD_PATH := "res://scripts/rpg/CommandHUD.gd"
+const CMath: Script = preload("res://scripts/combat/CombatMath.gd")
 
 var rules: RPGRules = RPGRules.new()
 var formation: Formation = Formation.new()
